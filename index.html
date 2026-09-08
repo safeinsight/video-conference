@@ -2620,6 +2620,9 @@ const CUSTOM_ALERT_MESSAGES = {
 
         participantChat:
         "The Instructor sent you a chat message.",
+        
+        adminParticipantChat:
+        name => name + " sent you a chat message.",
 
         participantKnock:
         name => name + " is requesting to enter the conference.",
@@ -8325,6 +8328,33 @@ let chatChannel = null;
 let adminChatThreads = {};
 let openAdminChatThread = "ALL";
 
+const NORMAL_PAGE_TITLE = document.title;
+
+let browserTabAlertActive = false;
+
+function activateBrowserTabAlert(){
+
+    if(browserTabAlertActive){
+        return;
+    }
+
+    browserTabAlertActive = true;
+
+    document.title =
+        "🟡 " + NORMAL_PAGE_TITLE;
+
+}
+
+
+function clearBrowserTabAlert(){
+
+    browserTabAlertActive = false;
+
+    document.title =
+        NORMAL_PAGE_TITLE;
+
+}
+
 function playAdminChatNotification(){
 
     try{
@@ -8616,6 +8646,14 @@ adminChatThreads[senderId].push({
 
 playAdminChatNotification();
 
+showCustomAlert(
+    CUSTOM_ALERT_MESSAGES.adminParticipantChat(
+        message.senderName || "Participant"
+    )
+);
+
+activateBrowserTabAlert();
+
 const chatTile = document.querySelector(
     `.videoTile[data-participant-id="${senderId}"]`
 );
@@ -8626,16 +8664,26 @@ if(chatTile){
 }
 
                     
-appendChatMessage(
-    adminChatMessages,
-    false,
-    message.senderName || "Participant",
-    message.text,
-    message.sentAt
-);
-                    
-            renderAdminChatRecipients();
-        }
+/*
+ * Only update the visible chat window
+ * if the administrator is viewing:
+ *
+ * 1. Chat All Users
+ * OR
+ * 2. The participant who sent the message
+ */
+
+if(
+    openAdminChatThread === "ALL" ||
+    openAdminChatThread === senderId
+){
+
+    renderAdminChatMessages();
+
+}
+
+renderAdminChatRecipients();
+}
                 
 }else{
 
@@ -8954,7 +9002,9 @@ function renderAdminChatMessages(){
 adminChatButton.addEventListener(
     "click",
     function(){
-
+        
+clearBrowserTabAlert();
+        
         if(
             adminChatPanel.style.display === "flex"
         ){
