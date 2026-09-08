@@ -85,9 +85,7 @@ input {
 }
 
 #connectionStatus {
-    font-size: 13px;
-    color: #62ff62;
-    white-space: nowrap;
+    display: none !important;
 }
 
 
@@ -1541,6 +1539,10 @@ input {
         height: 100%;
     }
 
+        body.administratorMode #header {
+        width: 70%;
+    }
+
     /*
      * Video grid fills the administrator
      * video area.
@@ -1556,7 +1558,7 @@ input {
      */
     #adminPanel {
         width: 30%;
-        top: 72px;
+        top: 0;
         bottom: 64px;
         display: flex;
     }
@@ -3054,6 +3056,8 @@ if(isMirror && !isAdministrator){
 ========================================================= */
 
 function initializeAdministrator(){
+
+     document.body.classList.add("administratorMode");
 
     joinScreen.classList.add(
         "hidden"
@@ -7216,9 +7220,9 @@ function renderParticipants(){
                         onclick="toggleMicLock('${participant.id}')"
                     >
                         ${
-                            participant.micOn
-                            ? "🔒 Lock Mic"
-                            : "Unlock Mic"
+                            participant.micLocked
+                            ? "🔓 Unlock Mic"
+                            : "🔒 Lock Mic"
                         }
                     </button>
 
@@ -7956,9 +7960,9 @@ if(participant.cameraOn){
                 onclick="toggleMicLock('${participant.id}')"
             >
                 ${
-                    participant.micOn
-                    ? "🔒 Lock Mic"
-                    : "Unlock Mic"
+                    participant.micLocked
+                    ? "🔓 Unlock Mic"
+                    : "🔒 Lock Mic"
                 }
             </button>
 
@@ -8099,14 +8103,14 @@ function updateParticipantTileStatus(
      * based on current microphone status.
      */
     
-    if(adminButtons.length >= 3){
-    
-        adminButtons[2].textContent =
-            participant.micOn
-            ? "🔒 Lock Mic"
-            : "Unlock Mic";
-    
-    }
+if(adminButtons.length >= 3){
+
+    adminButtons[2].textContent =
+        participant.micLocked
+        ? "🔓 Unlock Mic"
+        : "🔒 Lock Mic";
+
+}
 
 }
 
@@ -8606,7 +8610,8 @@ function initializeChat(){
 adminChatThreads[senderId].push({
     mine:false,
     senderName:message.senderName || "Participant",
-    text:message.text
+    text:message.text,
+    sentAt:message.sentAt
 });
 
 playAdminChatNotification();
@@ -8621,9 +8626,17 @@ if(chatTile){
 }
 
                     
-            appendChatMessage(adminChatMessages, false, message.senderName || "Participant", message.text);
+appendChatMessage(
+    adminChatMessages,
+    false,
+    message.senderName || "Participant",
+    message.text,
+    message.sentAt
+);
+                    
             renderAdminChatRecipients();
         }
+                
 }else{
 
     if(
@@ -8634,7 +8647,8 @@ if(chatTile){
             participantChatMessages,
             message.senderId === window.myParticipantId,
             message.senderName || "Administrator",
-            message.text
+            message.text,
+            message.sentAt
         );
 
 if(message.senderId === "ADMIN"){
@@ -8653,13 +8667,57 @@ if(message.senderId === "ADMIN"){
         .subscribe(function(status){ console.log("Chat channel:", status); });
 }
 
-function appendChatMessage(container, mine, senderName, text){
-    if(!container){ return; }
-    const div = document.createElement("div");
-    div.className = "chatMessage" + (mine ? " mine" : "");
-    div.innerHTML = `<div class="chatMessageMeta">${escapeHtml(senderName)}</div><div>${escapeHtml(text)}</div>`;
+function appendChatMessage(
+    container,
+    mine,
+    senderName,
+    text,
+    sentAt
+){
+    if(!container){
+        return;
+    }
+
+    const div =
+        document.createElement("div");
+
+    div.className =
+        "chatMessage" +
+        (mine ? " mine" : "");
+
+    let timestamp = "";
+
+    if(sentAt){
+
+        const date =
+            new Date(sentAt);
+
+        timestamp =
+            date.toLocaleTimeString(
+                [],
+                {
+                    hour:"numeric",
+                    minute:"2-digit"
+                }
+            );
+
+    }
+
+    div.innerHTML =
+        `<div class="chatMessageMeta">
+            ${escapeHtml(senderName)}
+            ${
+                timestamp
+                ? `<span class="chatMessageTime">${timestamp}</span>`
+                : ""
+            }
+        </div>
+        <div>${escapeHtml(text)}</div>`;
+
     container.appendChild(div);
-    container.scrollTop = container.scrollHeight;
+
+    container.scrollTop =
+        container.scrollHeight;
 }
 
 function renderAdminChatRecipients(){
@@ -8843,14 +8901,15 @@ function renderAdminChatMessages(){
         allMessages.forEach(
             function(message){
 
-                appendChatMessage(
-                    adminChatMessages,
-                    message.mine,
-                    message.mine
-                        ? "Administrator"
-                        : message.senderName,
-                    message.text
-                );
+        appendChatMessage(
+            adminChatMessages,
+            message.mine,
+            message.mine
+                ? "Administrator"
+                : message.senderName,
+            message.text,
+            message.sentAt
+        );
 
             }
         );
@@ -8877,14 +8936,15 @@ function renderAdminChatMessages(){
     messages.forEach(
         function(message){
 
-            appendChatMessage(
-                adminChatMessages,
-                message.mine,
-                message.mine
-                    ? "Administrator"
-                    : message.senderName,
-                message.text
-            );
+        appendChatMessage(
+            adminChatMessages,
+            message.mine,
+            message.mine
+                ? "Administrator"
+                : message.senderName,
+            message.text,
+            message.sentAt
+        );
 
         }
     );
@@ -8964,11 +9024,12 @@ adminChatSend.addEventListener(
                     adminChatThreads[id] = [];
                 }
 
-                adminChatThreads[id].push({
-                    mine:true,
-                    senderName:"Administrator",
-                    text:text
-                });
+            adminChatThreads[id].push({
+                mine:true,
+                senderName:"Administrator",
+                text:text,
+                sentAt:new Date().toISOString()
+            });
 
             }
 
@@ -9004,7 +9065,8 @@ adminChatSend.addEventListener(
             adminChatThreads[id].push({
                 mine:true,
                 senderName:"Administrator",
-                text:text
+                text:text,
+                sentAt:new Date().toISOString()
             });
 
         }
@@ -9024,7 +9086,13 @@ participantChatSend.addEventListener("click", async function(){
     const text = participantChatInput.value.trim();
     if(!text || !chatChannel || !window.myParticipantId){ return; }
     await chatChannel.send({ type:"broadcast", event:"chat", payload:{ roomId:ROOM_ID, senderId:window.myParticipantId, senderName:nameInput.value.trim() || "Participant", recipientId:"ADMIN", text:text, sentAt:new Date().toISOString() } });
-    appendChatMessage(participantChatMessages, true, "You", text);
+appendChatMessage(
+    participantChatMessages,
+    true,
+    "You",
+    text,
+    new Date().toISOString()
+);
     participantChatInput.value = "";
 });
 
