@@ -2494,6 +2494,18 @@ function generateParticipantCredential(){
    WEBRTC STATE
 ========================================================= */
 
+/*
+ * WebRTC always begins with the public STUN server.
+ *
+ * Authorized conference participants, administrators, and
+ * administrator-created mirror windows may later receive
+ * temporary Cloudflare TURN servers from the secured
+ * turn-credentials Edge Function.
+ *
+ * TURN remains a fallback. WebRTC is still free to establish
+ * a direct connection through STUN whenever possible.
+ */
+
 const rtcConfiguration = {
 
     iceServers: [
@@ -2505,6 +2517,263 @@ const rtcConfiguration = {
     ]
 
 };
+
+
+/*
+ * TURN credentials are loaded only after this browser has
+ * established conference authority.
+ *
+ * Participant authority:
+ *     approved participant ID + private participant credential
+ *
+ * Administrator authority:
+ *     authenticated Supabase session + room authorization
+ *
+ * Mirror authority:
+ *     authenticated Supabase administrator session + room
+ *     authorization
+ *
+ * The participant ID carried by a mirror URL identifies only
+ * which participant media the mirror should display. It does
+ * not grant conference or TURN authority.
+ *
+ * The temporary TURN credentials remain only in browser memory.
+ */
+
+let turnCredentialsLoaded =
+    false;
+
+let turnCredentialsPromise =
+    null;
+
+
+/*
+ * Load temporary TURN credentials for the authority currently
+ * established in this browser.
+ *
+ * Multiple WebRTC connections may start close together.
+ * Reuse one in-flight request so they do not independently
+ * request duplicate TURN credentials.
+ */
+
+async function ensureTurnCredentials(){
+
+    if(turnCredentialsLoaded){
+        return true;
+    }
+
+
+    if(turnCredentialsPromise){
+        return await turnCredentialsPromise;
+    }
+
+
+    turnCredentialsPromise =
+        (async function(){
+
+            try{
+
+                const headers = {
+                    "Content-Type":
+                        "application/json"
+                };
+
+                let requestBody;
+
+
+                /*
+                 * Administrator windows and administrator-created
+                 * mirror windows both obtain TURN through
+                 * administrator authority.
+                 *
+                 * isMirror does not itself grant authority.
+                 *
+                 * The browser must possess an authenticated
+                 * Supabase session, and the secured Edge Function
+                 * independently verifies that the signed-in user
+                 * may administer ROOM_ID.
+                 */
+
+                if(
+                    isAdministrator ||
+                    isMirror
+                ){
+
+                    const {
+                        data: sessionData,
+                        error: sessionError
+                    } =
+                    await supabaseClient.auth.getSession();
+
+
+                    if(sessionError){
+
+                        console.error(
+                            "TURN ADMIN SESSION ERROR:",
+                            sessionError
+                        );
+
+                        return false;
+                    }
+
+
+                    const session =
+                        sessionData?.session;
+
+
+                    if(!session?.access_token){
+
+                        console.error(
+                            "TURN credentials not requested: administrator session is unavailable."
+                        );
+
+                        return false;
+                    }
+
+
+                    headers.Authorization =
+                        `Bearer ${session.access_token}`;
+
+
+                    requestBody = {
+                        room_id:
+                            ROOM_ID,
+
+                        access_type:
+                            "administrator"
+                    };
+
+                }else{
+
+                    if(
+                        !window.myParticipantId ||
+                        !participantCredential
+                    ){
+
+                        console.error(
+                            "TURN credentials not requested: participant authorization is unavailable."
+                        );
+
+                        return false;
+                    }
+
+
+                    requestBody = {
+                        room_id:
+                            ROOM_ID,
+
+                        access_type:
+                            "participant",
+
+                        participant_id:
+                            window.myParticipantId,
+
+                        participant_credential:
+                            participantCredential
+                    };
+
+                }
+
+
+                const response =
+                    await fetch(
+                        `${SUPABASE_URL}/functions/v1/turn-credentials`,
+                        {
+                            method:
+                                "POST",
+
+                            headers:
+                                headers,
+
+                            body:
+                                JSON.stringify(
+                                    requestBody
+                                )
+                        }
+                    );
+
+
+                if(!response.ok){
+
+                    console.error(
+                        "TURN credential request denied:",
+                        response.status
+                    );
+
+                    return false;
+                }
+
+
+                const data =
+                    await response.json();
+
+
+                if(
+                    !Array.isArray(
+                        data.iceServers
+                    ) ||
+                    data.iceServers.length === 0
+                ){
+
+                    console.error(
+                        "TURN credential response did not contain ICE servers."
+                    );
+
+                    return false;
+                }
+
+
+                rtcConfiguration.iceServers = [
+                    {
+                        urls:
+                            "stun:stun.l.google.com:19302"
+                    },
+                    ...data.iceServers
+                ];
+
+
+                turnCredentialsLoaded =
+                    true;
+
+
+                console.log(
+                    "Secure TURN fallback ready."
+                );
+
+
+                return true;
+
+            }catch(error){
+
+                console.error(
+                    "TURN credential request failed:",
+                    error
+                );
+
+                return false;
+
+            }finally{
+
+                /*
+                 * Keep successful credentials cached in
+                 * rtcConfiguration.
+                 *
+                 * A failed request may be attempted again later
+                 * after conference authority becomes available.
+                 */
+
+                if(!turnCredentialsLoaded){
+                    turnCredentialsPromise =
+                        null;
+                }
+
+            }
+
+        })();
+
+
+    return await turnCredentialsPromise;
+}
 
 
 /*
@@ -2551,1113 +2820,6 @@ let webrtcSignalingChannel =
 
 let pendingParticipantIceCandidates =
     [];
-
-/* =========================================================
-   ADMINISTRATOR ACCESS REQUEST
-========================================================= */
-
-/*
- * IMPORTANT SECURITY BOUNDARY
- *
- * The URL may REQUEST administrator access.
- * It must never GRANT administrator authority.
- *
- * ?admin=true means only:
- *     "This browser is requesting the administrator workflow."
- *
- * Actual administrator authority will be established separately
- * through Supabase Auth and the conference authorization tables.
- *
- * Until that authorization succeeds:
- *
- *     isAdministrator MUST remain false.
- *
- * This preserves the existing participant workflow while
- * preventing a URL parameter from establishing administrator
- * authority.
- */
-
-const params = new URLSearchParams(
-    window.location.search
-);
-
-const administratorAccessRequested =
-    params.get("admin") === "true";
-
-/*
- * Fail closed.
- *
- * Nothing in the URL is allowed to change this to true.
- * A later authorization step will do so only after the signed-in
- * Supabase user has been proven to administer the organization
- * that owns the requested conference room.
- */
-isAdministrator =
-    false;
-
-const isMirror =
-    params.get("mirror") === "true";
-
-const mirrorParticipantId =
-    params.get("participant");
-
-
-/* =========================================================
-   DOM REFERENCES
-========================================================= */
-
-const joinScreen =
-    document.getElementById("joinScreen");
-
-const waitingScreen =
-    document.getElementById("waitingScreen");
-
-const waitingName =
-    document.getElementById("waitingName");
-
-const nameInput =
-    document.getElementById("nameInput");
-
-const knockButton =
-    document.getElementById("knockButton");
-
-const adminPanel =
-    document.getElementById("adminPanel");
-
-const adminPanelButton =
-    document.getElementById("adminPanelButton");
-
-const adminCameraButton =
-    document.getElementById("adminCameraButton");
-
-const micButton =
-    document.getElementById("micButton");
-
-const cameraButton =
-    document.getElementById("cameraButton");
-
-const leaveButton =
-    document.getElementById("leaveButton");
-    
-
-const adminVideo =
-    document.getElementById("adminVideo");
-
-const adminLogoContainer =
-    document.getElementById("adminLogoContainer");
-
-const adminModeBadge =
-    document.getElementById("adminModeBadge");
-
-const connectionStatus =
-    document.getElementById("connectionStatus");
-
-const waitingList =
-    document.getElementById("waitingList");
-
-const participantList =
-    document.getElementById("participantList");
-
-const noParticipants =
-    document.getElementById("noParticipants");
-
-const administratorView = document.getElementById("administratorView");
-const participantView = document.getElementById("participantView");
-const administratorToolbar = document.getElementById("administratorToolbar");
-const toolbar = document.getElementById("toolbar");
-const participantLocalVideo = document.getElementById("participantLocalVideo");
-const participantVideoPlaceholder = document.getElementById("participantVideoPlaceholder");
-const adminChatButton = document.getElementById("adminChatButton");
-const adminChatPanel = document.getElementById("adminChatPanel");
-const closeAdminChat = document.getElementById("closeAdminChat");
-const adminChatRecipients = document.getElementById("adminChatRecipients");
-const adminChatMessages = document.getElementById("adminChatMessages");
-const adminChatInput = document.getElementById("adminChatInput");
-const adminChatSend = document.getElementById("adminChatSend");
-
-const participantChatMessages = document.getElementById("participantChatMessages");
-const participantChatInput = document.getElementById("participantChatInput");
-const participantChatSend = document.getElementById("participantChatSend");
-const micButtonParticipant = document.getElementById("micButtonParticipant");
-const cameraButtonParticipant = document.getElementById("cameraButtonParticipant");
-const leaveButtonParticipant = document.getElementById("leaveButtonParticipant");
-
-
-const participantBrowserFrame =
-    document.getElementById("participantBrowserFrame");
-
-
-/* =========================================================
-   CUSTOM ALERT / CONFIRM REFERENCES
-========================================================= */
-
-const customAlertOverlay =
-    document.getElementById("customAlertOverlay");
-
-const customAlertMessage =
-    document.getElementById("customAlertMessage");
-
-const customAlertOk =
-    document.getElementById("customAlertOk");
-
-const customAlertCancel =
-    document.getElementById("customAlertCancel");
-
-/*
- * EDIT THESE MESSAGES TO CHANGE WHAT USERS SEE.
- *
- * Dynamic messages (participant names and database errors)
- * are functions so the changing information can be included.
- */
-const CUSTOM_ALERT_MESSAGES = {
-
-    missingName:
-        "Please enter your FULL NAME.",
-
-    conferenceUnavailable:
-        "Unable to contact the conference room.",
-
-        participantChat:
-        "The Instructor sent you a chat message.",
-        
-        adminParticipantChat:
-        name => name + " sent you a chat message.",
-
-        participantKnock:
-        name => name + " is requesting to enter the conference.",
-
-    removed:
-        "The Instructor has removed you from the conference.",
-
-    denied:
-        "The Instructor did not allow entry to the conference.",
-
-    participantLeft:
-        name => name + " has left the conference.",
-
-    allowError:
-        error => "Unable to allow participant.\n\n" + error.message,
-
-    removeError:
-        error => "Unable to remove participant.\n\n" + error.message,
-
-    administratorCamera:
-        "Unable to access the administrator camera.",
-
-    administratorMicrophone:
-        "Microphone permission was not granted.",
-
-    denyError:
-        error => "Unable to deny participant.\n\n" + error.message,
-
-    conferenceFull:
-        "The conference is full. Maximum 8 participants plus the Instructor.",
-
-    sessionNotFound:
-        "Unable to identify your conference session.",
-
-    leaveError:
-        error => "Unable to leave the conference.\n\n" + error.message,
-
-    leaveConfirm:
-        "Leave this conference?",
-
-    screenShareRequest:
-        "The Instructor wants to view your screen.\n\nClick Share Screen to choose what you want to share."
-};
-
-/* =========================================================
-   CUSTOM ALERT / CONFIRM FUNCTIONS
-========================================================= */
-
-function showCustomAlert(message){
-
-    customAlertMessage.textContent =
-        message;
-
-    customAlertCancel.style.display =
-        "none";
-
-    customAlertOk.textContent =
-        "OK";
-
-    customAlertOverlay.classList.add(
-        "show"
-    );
-
-    customAlertOverlay.setAttribute(
-        "aria-hidden",
-        "false"
-    );
-
-    customAlertOk.focus();
-}
-
-function showCustomConfirm(message){
-
-    return new Promise(
-        function(resolve){
-
-            customAlertMessage.textContent =
-                message;
-
-            customAlertCancel.style.display =
-                "inline-block";
-
-            customAlertOk.textContent =
-                "Continue";
-
-            customAlertOverlay.classList.add(
-                "show"
-            );
-
-            customAlertOverlay.setAttribute(
-                "aria-hidden",
-                "false"
-            );
-
-            function finish(result){
-
-                customAlertOverlay.classList.remove(
-                    "show"
-                );
-
-                customAlertOverlay.setAttribute(
-                    "aria-hidden",
-                    "true"
-                );
-
-                customAlertCancel.style.display =
-                    "none";
-
-                customAlertOk.textContent =
-                    "OK";
-
-                customAlertOk.removeEventListener(
-                    "click",
-                    onConfirm
-                );
-
-                customAlertCancel.removeEventListener(
-                    "click",
-                    onCancel
-                );
-
-                resolve(result);
-            }
-
-            function onConfirm(){
-                finish(true);
-            }
-
-            function onCancel(){
-                finish(false);
-            }
-
-            customAlertOk.addEventListener(
-                "click",
-                onConfirm
-            );
-
-            customAlertCancel.addEventListener(
-                "click",
-                onCancel
-            );
-
-            customAlertOk.focus();
-        }
-    );
-}
-
-async function showScreenShareRequest(
-    participantId
-){
-
-    return new Promise(
-        function(resolve){
-
-            customAlertMessage.textContent =
-                CUSTOM_ALERT_MESSAGES.screenShareRequest;
-
-            customAlertCancel.style.display =
-                "inline-block";
-
-            customAlertOk.textContent =
-                "Share Screen";
-
-            customAlertOverlay.classList.add(
-                "show"
-            );
-
-            customAlertOverlay.setAttribute(
-                "aria-hidden",
-                "false"
-            );
-
-            async function onShareScreen(){
-
-                try{
-
-            participantScreenStream =
-                await navigator.mediaDevices.getDisplayMedia({
-                    video: {
-                        displaySurface: "window"
-                    },
-                    audio: false,
-                    selfBrowserSurface: "exclude",
-                    monitorTypeSurfaces: "include"
-        });
-
-                    const screenTrack =
-                        participantScreenStream.getVideoTracks()[0];
-
-                    
-                    if(screenTrack){
-                    
-                        screenTrack.addEventListener(
-                            "ended",
-                            function(){
-                    
-                                console.log(
-                                    "PARTICIPANT SCREEN SHARE ENDED"
-                                );
-                    
-                                participantScreenStream =
-                                    null;
-                    
-                            }
-                        );
-                    
-                    }
-
-                                        /*
-                     * If the mirror already sent its
-                     * WebRTC offer, process it now
-                     * that the screen stream exists.
-                     */
-                    if(pendingMirrorOffer){
-
-                        const queuedOffer =
-                            pendingMirrorOffer;
-
-                        pendingMirrorOffer =
-                            null;
-
-                        await handleParticipantMirrorWebRTCSignal(
-                            queuedOffer
-                        );
-
-                    }
-
-                    await sendWebRTCSignal({
-                        type: "screen-share-ready",
-                        senderId: window.myParticipantId,
-                        targetId: "mirror-" + participantId,
-                        participantId: window.myParticipantId
-});
-
-                    customAlertOverlay.classList.remove(
-                        "show"
-                    );
-
-                    customAlertOverlay.setAttribute(
-                        "aria-hidden",
-                        "true"
-                    );
-
-                    customAlertCancel.style.display =
-                        "none";
-
-                    customAlertOk.textContent =
-                        "OK";
-
-                    customAlertOk.removeEventListener(
-                        "click",
-                        onShareScreen
-                    );
-
-                    customAlertCancel.removeEventListener(
-                        "click",
-                        onCancel
-                    );
-
-                    resolve(true);
-
-                }catch(error){
-
-                    console.log(
-                        "Screen share was not granted:",
-                        error
-                    );
-
-                    customAlertOverlay.classList.remove(
-                        "show"
-                    );
-
-                    customAlertOverlay.setAttribute(
-                        "aria-hidden",
-                        "true"
-                    );
-
-                    customAlertCancel.style.display =
-                        "none";
-
-                    customAlertOk.textContent =
-                        "OK";
-
-                    customAlertOk.removeEventListener(
-                        "click",
-                        onShareScreen
-                    );
-
-                    customAlertCancel.removeEventListener(
-                        "click",
-                        onCancel
-                    );
-
-                    resolve(false);
-                }
-            }
-
-            function onCancel(){
-
-                customAlertOverlay.classList.remove(
-                    "show"
-                );
-
-                customAlertOverlay.setAttribute(
-                    "aria-hidden",
-                    "true"
-                );
-
-                customAlertCancel.style.display =
-                    "none";
-
-                customAlertOk.textContent =
-                    "OK";
-
-                customAlertOk.removeEventListener(
-                    "click",
-                    onShareScreen
-                );
-
-                customAlertCancel.removeEventListener(
-                    "click",
-                    onCancel
-                );
-
-                resolve(false);
-            }
-
-            customAlertOk.addEventListener(
-                "click",
-                onShareScreen
-            );
-
-            customAlertCancel.addEventListener(
-                "click",
-                onCancel
-            );
-
-            customAlertOk.focus();
-        }
-    );
-}
-
-/*
- * Normal alerts close with OK.
- * Confirmations are handled by their own listeners above.
- */
-customAlertOk.addEventListener(
-    "click",
-    function(){
-
-        if(
-            customAlertCancel.style.display ===
-            "none"
-        ){
-
-            customAlertOverlay.classList.remove(
-                "show"
-            );
-
-            customAlertOverlay.setAttribute(
-                "aria-hidden",
-                "true"
-            );
-        }
-
-    }
-);
-
-/*
- * Clicking the dark area does NOT dismiss the modal.
- * This keeps the behavior similar to a browser alert.
- *
- * Escape cancels a confirmation but does not dismiss
- * a normal alert.
- */
-document.addEventListener(
-    "keydown",
-    function(event){
-
-        if(
-            event.key === "Escape" &&
-            customAlertOverlay.classList.contains("show") &&
-            customAlertCancel.style.display !== "none"
-        ){
-
-            customAlertCancel.click();
-        }
-
-    }
-);
-
-
-
-function updateAdminCameraButton(text){
-
-    adminCameraButton.textContent = text;
-
-    adminCameraButton.classList.toggle(
-        "logoActive",
-        text === "Cam ON"
-    );
-
-}
-
-
-
-    
-/* =========================================================
-   INITIALIZE
-========================================================= */
-
-function initializeApplication(){
-
-if(isMirror && !isAdministrator){
-    initializeParticipantMirror();
-    return;
-}
-
-    if(isAdministrator){
-
-        initializeAdministrator();
-
-    }else{
-
-        initializeParticipant();
-
-    }
-
-}
-
-
-/* =========================================================
-   ADMINISTRATOR BLOCK
-========================================================= */
-
-function initializeAdministrator(){
-
-    document.body.classList.add("administratorMode");
-
-    joinScreen.classList.add(
-        "hidden"
-    );
-
-    administratorView.style.display =
-        "block";
-
-    participantView.style.display =
-        "none";
-
-    toolbar.style.display =
-        "flex";
-
-    administratorToolbar.style.display =
-        "flex";
-
-    adminModeBadge.style.display =
-        "none";
-
-
-    connectionStatus.textContent =
-        "● Administrator";
-
-    connectionStatus.style.color =
-        "#62ff62";
-
-
-    /*
-     * Administrator media starts completely released.
-     *
-     * Camera and microphone are acquired only when the
-     * administrator explicitly turns them on.
-     */
-
-    localStream = null;
-
-    administratorCameraOn = false;
-    administratorMicOn = false;
-
-    updateAdminCameraButton("Camera OFF");
-    updateAdministratorCameraStatus();
-
-    updateAdministratorMicButton();
-    updateAdministratorMicStatus();
-
-}
-
-/* =========================================================
-   PARTICIPANT MIRROR
-========================================================= */
-    
-function initializeParticipantMirror(){
-
-    document.body.classList.add("mirrorMode");
-
-    joinScreen.classList.add("hidden");
-
-    administratorView.style.display = "none";
-
-    participantView.style.display = "flex";
-
-    toolbar.style.display = "none";
-
-    adminPanel.style.display = "none";
-
-    connectionStatus.textContent =
-        "● Participant Mirror";
-
-    connectionStatus.style.color =
-        "#62ff62";
-
-    /*
-     * Load the participant's current camera state
-     * and establish a receive-only mirror connection.
-     */
-    if(mirrorParticipantId){
-
-        supabaseClient
-            .from("conference_participants")
-            .select("camera_on")
-            .eq("id", mirrorParticipantId)
-            .single()
-            .then(function(result){
-
-                if(!result.error && result.data){
-
-                    mirrorCameraOn =
-                        result.data.camera_on !== false;
-
-                    cameraButtonParticipant.textContent =
-                        mirrorCameraOn
-                        ? "📹 Camera ON"
-                        : "📹 Camera OFF";
-
-                    cameraButtonParticipant.classList.toggle(
-                        "active",
-                        mirrorCameraOn
-                    );
-
-                }
-
-            });
-
-
-    }
-
-    /*
-     * Start the mirror receiver immediately.
-     * This prevents the screen-share signal
-     * from being lost while the mirror window
-     * is still loading.
-     */
-    if(mirrorParticipantId){
-
-        const waitForSignaling =
-            setInterval(
-                async function(){
-
-                    if(!webRTCSignalingReady){
-                        return;
-                    }
-
-                    clearInterval(
-                        waitForSignaling
-                    );
-
-                    await startParticipantMirrorWebRTC(
-                        mirrorParticipantId
-                    );
-
-                },
-                50
-            );
-
-    }
-
-}
-
-/* =========================================================
-   PARTICIPANT
-========================================================= */
-
-function initializeParticipant(){
-
-    administratorView.style.display = "none";
-    participantView.style.display = "none";
-    toolbar.style.display = "none";
-    administratorToolbar.style.display = "none";
-    adminPanel.style.display = "none";
-
-    joinScreen.classList.remove("hidden");
-
-}
-
-/* =========================================================
-   KNOCK
-========================================================= */
-
-knockButton.addEventListener(
-    "click",
-    async function(){
-
-        const name =
-            nameInput.value.trim();
-
-
-        if(!name){
-
-            showCustomAlert(
-                CUSTOM_ALERT_MESSAGES.missingName
-            );
-
-            nameInput.focus();
-
-            return;
-        }
-
-
-        knockButton.disabled =
-            true;
-
-        knockButton.textContent =
-            "Knocking...";
-
-
-        /*
-           Ask for camera and microphone permission.
-        */
-
-        try{
-
-            localStream =
-                await navigator.mediaDevices.getUserMedia({
-                    video:true,
-                    audio:true
-                });
-
-
-            const audioTracks =
-                localStream.getAudioTracks();
-
-
-            audioTracks.forEach(
-                track => {
-
-                    track.enabled =
-                        false;
-
-                }
-            );
-
-
-            micButtonParticipant.textContent =
-                "🔇 Mic OFF";
-
-            micButtonParticipant.classList.remove(
-                "active"
-            );
-
-        }catch(error){
-
-            console.log(
-                "Camera/microphone permission:",
-                error
-            );
-
-        }
-
-
-        /*
-           Generate this participant's private credential.
-
-           The raw credential stays in this browser.
-           The secure RPC stores only its hash.
-        */
-
-        const newParticipantCredential =
-            generateParticipantCredential();
-
-
-        /*
-           Create participant through the secure RPC.
-
-           The browser no longer directly INSERTS into
-           conference_participants.
-
-           The RPC controls the fields that may be created
-           and establishes the participant credential
-           atomically with the participant record.
-        */
-
-        const {
-            data,
-            error
-        } =
-        await supabaseClient.rpc(
-            "create_conference_participant",
-            {
-                requested_room_id:
-                    ROOM_ID,
-
-                requested_participant_name:
-                    name,
-
-                requested_camera_on:
-                    true,
-
-                requested_mic_on:
-                    false,
-
-                supplied_credential:
-                    newParticipantCredential
-            }
-        );
-
-
-        if(error){
-
-            console.error(
-                "Secure knock error:",
-                error
-            );
-
-            showCustomAlert(
-                CUSTOM_ALERT_MESSAGES.conferenceUnavailable
-            );
-
-            knockButton.disabled =
-                false;
-
-            knockButton.textContent =
-                "🔔 Knock to Enter";
-
-            return;
-        }
-
-
-        /*
-           The participant and credential were created
-           successfully.
-
-           Only now retain the raw credential locally.
-        */
-
-        participantCredential =
-            newParticipantCredential;
-
-
-        /*
-           Save our participant ID.
-
-           We will need this later for WebRTC and the
-           credential-authorized participant RPCs.
-        */
-
-        window.myParticipantId =
-            data.id;
-
-
-        /*
-         * Create the participant WebRTC
-         * peer connection now, while we
-         * are waiting for administrator
-         * approval.
-         */
-
-        startParticipantWebRTC(
-            data
-        );
-
-
-        console.log(
-            "Secure knock successful:",
-            data
-        );
-
-
-        /*
-           Show waiting screen.
-        */
-
-        waitingName.textContent =
-            name;
-
-        joinScreen.classList.add(
-            "hidden"
-        );
-
-        waitingScreen.style.display =
-            "flex";
-
-
-        connectionStatus.textContent =
-            "● Waiting for approval";
-
-        connectionStatus.style.color =
-            "#ffd400";
-
-
-        /*
-           Listen for administrator decision.
-
-           We intentionally preserve the existing
-           participant Realtime listener during this
-           transition so the current waiting-room
-           experience remains unchanged.
-        */
-
-        subscribeToMyParticipant(
-            data.id
-        );
-
-    }
-);
-
-
-/* =========================================================
-   PARTICIPANT STATUS LISTENER
-========================================================= */
-
-function subscribeToMyParticipant(participantId){
-
-    console.log(
-        "Starting participant subscription:",
-        participantId
-    );
-
-    const channel =
-        supabaseClient
-            .channel(
-                "participant-" + participantId
-            )
-            .on(
-                "postgres_changes",
-                {
-                    event: "UPDATE",
-                    schema: "public",
-                    table: "conference_participants",
-                    filter:
-                        "id=eq." + participantId
-                },
-                function(payload){
-
-                    console.log(
-                        "================================"
-                    );
-
-                    console.log(
-                        "PARTICIPANT UPDATE RECEIVED"
-                    );
-
-                    console.log(
-                        "OLD:",
-                        payload.old
-                    );
-
-                    console.log(
-                        "NEW:",
-                        payload.new
-                    );
-
-                    console.log(
-                        "================================"
-                    );
-
-                    const participant =
-                        payload.new;
-
-if(
-    participant.status ===
-    "approved" &&
-    participantView.style.display !== "flex"
-){
-
-    console.log(
-        "ENTRY APPROVED"
-    );
-
-    enterConference(
-        participant
-    );
-
-    /*
-     * Start the actual WebRTC
-     * connection here.
-     *
-     * We will add the WebRTC
-     * function next.
-     */
-    startParticipantWebRTC(
-        participant
-    );
-
-}
-                    if(
-                        participant.status ===
-                        "denied"
-                    ){
-
-                        console.log(
-                            "ENTRY DENIED"
-                        );
-
-                        showDeniedScreen();
-
-                    }
-
-                    if(
-                        participant.status ===
-                        "removed"
-                    ){
-
-                        console.log(
-                            "REMOVED BY ADMINISTRATOR"
-                        );
-
-                        showRemovedScreen();
-
-                    }
-
-                }
-            )
-            .subscribe(
-                function(status){
-
-                    console.log(
-                        "Participant subscription status:",
-                        status
-                    );
-
-                }
-            );
-
-    window.participantChannel =
-        channel;
-
-}
 
 /* =========================================================
    WEBRTC SIGNALING
@@ -3974,7 +3136,6 @@ async function startParticipantWebRTC(
         );
 
         return;
-
     }
 
 
@@ -3985,7 +3146,6 @@ async function startParticipantWebRTC(
         );
 
         return;
-
     }
 
 
@@ -3998,6 +3158,33 @@ async function startParticipantWebRTC(
         );
 
         return;
+    }
+
+
+    /*
+     * The participant has reached the point where an actual
+     * WebRTC connection is about to be created.
+     *
+     * Request temporary TURN credentials now.
+     *
+     * The secured Edge Function will issue them only when this
+     * participant ID, private credential, room, and approved
+     * conference status are all valid.
+     *
+     * TURN is supplemental. If the credential request fails,
+     * retain the existing STUN configuration and allow WebRTC
+     * to attempt its normal direct connection.
+     */
+
+    const participantTurnReady =
+        await ensureTurnCredentials();
+
+
+    if(!participantTurnReady){
+
+        console.warn(
+            "Participant TURN fallback unavailable. Continuing with STUN."
+        );
 
     }
 
@@ -4164,6 +3351,39 @@ async function startParticipantMirrorWebRTC(
         participantId
     );
 
+
+    /*
+     * The mirror has reached the point where an actual WebRTC
+     * connection to the selected participant is about to be
+     * created.
+     *
+     * Request temporary TURN credentials using the authenticated
+     * administrator session inherited by this browser context.
+     *
+     * The participant ID in the mirror URL identifies the media
+     * target only. It grants no TURN or conference authority.
+     *
+     * The secured Edge Function independently verifies that the
+     * signed-in user may administer this room.
+     *
+     * TURN remains supplemental. If the credential request fails,
+     * retain the existing STUN configuration and allow WebRTC to
+     * attempt its normal direct connection.
+     */
+
+    const mirrorTurnReady =
+        await ensureTurnCredentials();
+
+
+    if(!mirrorTurnReady){
+
+        console.warn(
+            "Mirror TURN fallback unavailable. Continuing with STUN."
+        );
+
+    }
+
+
     mirrorPeerConnection =
         new RTCPeerConnection(
             rtcConfiguration
@@ -4194,7 +3414,6 @@ const videoTransceiver =
             if(!remoteStream){
                 remoteStream =
                     new MediaStream();
-
                 participantLocalVideo.srcObject =
                     remoteStream;
             }
@@ -4335,6 +3554,36 @@ async function handleParticipantMirrorWebRTCSignal(
             signal
         );
 
+
+        /*
+         * The approved participant has reached the point where
+         * the participant side of the mirror WebRTC connection
+         * is about to be created.
+         *
+         * Request temporary TURN credentials using this
+         * participant's existing secure conference authority:
+         *
+         *     participant ID + private participant credential
+         *
+         * The secured Edge Function independently verifies that
+         * the participant is approved for this room.
+         *
+         * TURN remains supplemental. If the credential request
+         * fails, preserve the existing STUN configuration and
+         * allow WebRTC to attempt its normal direct connection.
+         */
+
+        const participantMirrorTurnReady =
+            await ensureTurnCredentials();
+
+
+        if(!participantMirrorTurnReady){
+
+            console.warn(
+                "Participant mirror TURN fallback unavailable. Continuing with STUN."
+            );
+
+        }
 
 
         if(mirrorPeerConnection){
@@ -4486,7 +3735,6 @@ mirrorPeerConnection.addTrack(
             );
 
             return;
-
         }
 
         if(
@@ -4498,7 +3746,6 @@ mirrorPeerConnection.addTrack(
             );
 
             return;
-
         }
 
         try{
@@ -4566,7 +3813,6 @@ async function handleMirrorWebRTCSignal(
             );
 
             return;
-
         }
 
         try{
@@ -5021,6 +4267,39 @@ async function createAdminPeerConnection(
         return adminPeerConnections.get(
             participantId
         );
+    }
+
+
+    /*
+     * The administrator has reached the point where an actual
+     * WebRTC connection to this participant is about to be
+     * created.
+     *
+     * Request temporary TURN credentials using the
+     * administrator's authenticated Supabase session.
+     *
+     * The secured Edge Function will issue them only when the
+     * signed-in user is authorized to administer this room.
+     *
+     * TURN remains supplemental. If the credential request
+     * fails, preserve the existing STUN configuration and
+     * allow WebRTC to attempt its normal direct connection.
+     *
+     * ensureTurnCredentials() caches the successful result, so
+     * additional participant connections do not independently
+     * request another set of TURN credentials.
+     */
+
+    const administratorTurnReady =
+        await ensureTurnCredentials();
+
+
+    if(!administratorTurnReady){
+
+        console.warn(
+            "Administrator TURN fallback unavailable. Continuing with STUN."
+        );
+
     }
 
 
