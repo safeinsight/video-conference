@@ -2408,7 +2408,7 @@ console.log(
  */
 
 const CONFERENCE_BUILD =
-    "ADMIN-TEST v1.4";
+    "ADMIN-TEST v1.5";
 
 
 console.log(
@@ -7653,14 +7653,92 @@ async function toggleParticipantCamera(id){
             p => p.id === id
         );
 
+
     if(!participant){
 
         return;
+
     }
 
 
-    participant.cameraOn =
+    /*
+       SECURITY BOUNDARY
+
+       The administrator browser may REQUEST a participant
+       camera state change, but it must not establish
+       authority itself.
+
+       The secure RPC verifies:
+
+       - there is an authenticated Supabase user
+       - the participant belongs to a known conference room
+       - that room belongs to an organization
+       - the authenticated user administers that organization
+       - the participant is currently approved
+    */
+
+    const requestedCameraOn =
         !participant.cameraOn;
+
+
+    const {
+        data,
+        error
+    } =
+    await supabaseClient.rpc(
+        "set_conference_participant_camera_admin",
+        {
+            requested_participant_id:
+                id,
+
+            requested_camera_on:
+                requestedCameraOn
+        }
+    );
+
+
+    if(error){
+
+        console.error(
+            "ADMIN PARTICIPANT CAMERA ERROR:",
+            error
+        );
+
+        showCustomAlert(
+            "Unable to change the participant camera.\n\n" +
+            error.message
+        );
+
+        return;
+
+    }
+
+
+    console.log(
+        "Administrator camera change approved through secure RPC:",
+        {
+            participantId:
+                id,
+
+            cameraOn:
+                requestedCameraOn,
+
+            result:
+                data
+        }
+    );
+
+
+    /*
+       The database has accepted the authoritative state
+       change.
+
+       Only now update local state and instruct the
+       participant browser to apply that state.
+    */
+
+    participant.cameraOn =
+        requestedCameraOn;
 
 
     await sendWebRTCSignal({
@@ -7687,6 +7765,7 @@ async function toggleParticipantCamera(id){
 
 
     renderParticipants();
+
 
     updateParticipantTileStatus(
         participant
