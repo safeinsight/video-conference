@@ -2408,7 +2408,7 @@ console.log(
  */
 
 const CONFERENCE_BUILD =
-    "ADMIN-TEST v1.3";
+    "ADMIN-TEST v1.4";
 
 
 console.log(
@@ -7706,19 +7706,92 @@ async function toggleParticipantMic(id){
             p => p.id === id
         );
 
+
     if(!participant){
 
         return;
+
     }
 
 
     /*
-     * Administrator can always
-     * change the participant microphone.
-     */
+       SECURITY BOUNDARY
+
+       The administrator browser may REQUEST a microphone
+       state change, but it must not establish authority
+       by directly updating conference_participants.
+
+       The secure RPC verifies:
+
+       - there is an authenticated Supabase user
+       - the participant belongs to a known conference room
+       - that room belongs to an organization
+       - the authenticated user administers that organization
+       - the participant is currently approved
+    */
+
+    const requestedMicOn =
+        !participant.micOn;
+
+
+    const {
+        data,
+        error
+    } =
+    await supabaseClient.rpc(
+        "set_conference_participant_mic_admin",
+        {
+            requested_participant_id:
+                id,
+
+            requested_mic_on:
+                requestedMicOn
+        }
+    );
+
+
+    if(error){
+
+        console.error(
+            "ADMIN PARTICIPANT MIC ERROR:",
+            error
+        );
+
+        showCustomAlert(
+            "Unable to change the participant microphone.\n\n" +
+            error.message
+        );
+
+        return;
+
+    }
+
+
+    console.log(
+        "Administrator microphone change approved through secure RPC:",
+        {
+            participantId:
+                id,
+
+            micOn:
+                requestedMicOn,
+
+            result:
+                data
+        }
+    );
+
+
+    /*
+       The database has accepted the authoritative state
+       change.
+
+       Only now update local state and instruct the
+       participant browser to apply that state.
+    */
 
     participant.micOn =
-        !participant.micOn;
+        requestedMicOn;
 
 
     await sendWebRTCSignal({
@@ -7746,11 +7819,13 @@ async function toggleParticipantMic(id){
 
     renderParticipants();
 
-        updateParticipantTileStatus(
+
+    updateParticipantTileStatus(
         participant
     );
 
 }
+
 
 /* =========================================================
    LOCK MICROPHONE
@@ -7763,26 +7838,86 @@ async function toggleMicLock(id){
             p => p.id === id
         );
 
+
     if(!participant){
+
         return;
+
     }
-
-
-    participant.micLocked =
-        !participant.micLocked;
-
-    console.log(
-    "MIC LOCK CLICKED:",
-    {
-        participantId: id,
-        micLocked: participant.micLocked,
-        micOn: participant.micOn
-    }
-);
 
 
     /*
-       Locking microphone automatically mutes it.
+       SECURITY BOUNDARY
+
+       Microphone locking is an administrator-authority
+       action.
+
+       The browser requests the change through the secure
+       RPC rather than directly updating
+       conference_participants.
+
+       Locking the microphone also forces the authoritative
+       microphone state OFF.
+
+       Unlocking removes the lock but does NOT automatically
+       turn the microphone back on.
+    */
+
+    const requestedMicLocked =
+        !participant.micLocked;
+
+
+    const {
+        data,
+        error
+    } =
+    await supabaseClient.rpc(
+        "set_conference_participant_mic_lock",
+        {
+            requested_participant_id:
+                id,
+
+            requested_mic_locked:
+                requestedMicLocked
+        }
+    );
+
+
+    if(error){
+
+        console.error(
+            "ADMIN PARTICIPANT MIC LOCK ERROR:",
+            error
+        );
+
+        showCustomAlert(
+            "Unable to change the participant microphone lock.\n\n" +
+            error.message
+        );
+
+        return;
+
+    }
+
+
+    /*
+       The secure RPC has now established the authoritative
+       lock state.
+
+       Update local state only after database authorization
+       succeeds.
+    */
+
+    participant.micLocked =
+        requestedMicLocked;
+
+
+    /*
+       Locking automatically mutes the participant.
+
+       Unlocking intentionally leaves the microphone OFF
+       until either the administrator or participant
+       explicitly turns it back on.
     */
 
     if(participant.micLocked){
@@ -7793,12 +7928,33 @@ async function toggleMicLock(id){
     }
 
 
+    console.log(
+        "Administrator microphone lock change approved through secure RPC:",
+        {
+            participantId:
+                id,
+
+            micLocked:
+                participant.micLocked,
+
+            micOn:
+                participant.micOn,
+
+            result:
+                data
+        }
+    );
+
+
     /*
-       Send the microphone state AND the
-       lock state to the participant.
+       The authoritative database change succeeded.
+
+       Now tell the participant browser to apply both
+       microphone and lock state.
     */
 
     await sendWebRTCSignal({
+
         type:
             "participant-media-control",
 
@@ -7824,49 +7980,8 @@ async function toggleMicLock(id){
 
 
     /*
-       Save the lock state and microphone
-       state to Supabase.
-    */
-
-    supabaseClient
-        .from(
-            "conference_participants"
-        )
-        .update({
-
-            mic_locked:
-                participant.micLocked,
-
-            mic_on:
-                participant.micOn,
-
-            updated_at:
-                new Date().toISOString()
-
-        })
-        .eq(
-            "id",
-            id
-        )
-        .then(
-            function(result){
-
-                if(result.error){
-
-                    console.error(
-                        "MIC LOCK UPDATE ERROR:",
-                        result.error
-                    );
-
-                }
-
-            }
-        );
-
-
-    /*
-       Update the existing tile without
-       destroying the WebRTC video element.
+       Update the existing tile without destroying
+       the WebRTC video element.
     */
 
     updateParticipantTileStatus(
