@@ -2392,7 +2392,31 @@ console.log(
     "Conference Room:",
     ROOM_ID
 );
-    
+
+
+/* =========================================================
+   BUILD VERSION
+========================================================= */
+
+/*
+ * Update this value whenever a new conference build
+ * is committed for deployment.
+ *
+ * This gives us an immediate, unmistakable indication
+ * in the browser console of which version is actually
+ * being executed.
+ */
+
+const CONFERENCE_BUILD =
+    "ADMIN-TEST v1.2";
+
+
+console.log(
+    "🚔 CONFERENCE BUILD:",
+    CONFERENCE_BUILD
+);
+
+
 /* =========================================================
    APPLICATION STATE
 ========================================================= */
@@ -6757,18 +6781,78 @@ async function removeParticipant(id){
         id
     );
 
+
     /*
-     * Immediately remove the participant's
-     * control panel entry from the administrator view.
-     *
-     * IMPORTANT:
-     * Do NOT remove the participant from the
-     * participants array here.
-     */
+       SECURITY BOUNDARY
+
+       Administrator removal must not directly update or
+       delete conference_participants.
+
+       The authenticated administrator requests removal
+       through the secure database RPC. The RPC establishes
+       whether the signed-in user administers the organization
+       that owns this participant's conference room and permits
+       only the approved -> removed transition.
+    */
+
+    const {
+        data,
+        error
+    } =
+    await supabaseClient.rpc(
+        "remove_conference_participant",
+        {
+            requested_participant_id: id
+        }
+    );
+
+
+    /*
+       Do not change the administrator's local display unless
+       the authoritative database operation succeeded.
+    */
+
+    if(error){
+
+        console.error(
+            "REMOVE PARTICIPANT ERROR:",
+            error
+        );
+
+        showCustomAlert(
+            CUSTOM_ALERT_MESSAGES.removeError(error)
+        );
+
+        return;
+    }
+
+
+    console.log(
+        "Participant removed through secure RPC:",
+        data
+    );
+
+
+    /*
+       Close the administrator's WebRTC connection
+       with this participant.
+    */
+
+    closeParticipantWebRTC(
+        id
+    );
+
+
+    /*
+       Remove the participant's control-panel entry
+       immediately from the administrator view.
+    */
+
     const participantControl =
         document.querySelector(
             `.participantControl[data-participant-id="${id}"]`
         );
+
 
     if(participantControl){
 
@@ -6776,18 +6860,12 @@ async function removeParticipant(id){
 
     }
 
-/*
- * Close the WebRTC connection.
- */
-
-closeParticipantWebRTC(
-    id
-);
 
     /*
-     * Immediately clear the participant's
-     * video tile from the administrator view.
-     */
+       Immediately clear the participant's
+       video tile from the administrator view.
+    */
+
     document
         .querySelectorAll(
             ".videoTile[data-participant-id]"
@@ -6810,56 +6888,21 @@ closeParticipantWebRTC(
             }
         );
 
-    /*
-     * Tell Supabase that the participant
-     * has been removed.
-     */
-    const {
-        error: updateError
-    } =
-    await supabaseClient
-        .from("conference_participants")
-        .update({
-            status: "removed",
-            updated_at:
-                new Date().toISOString()
-        })
-        .eq(
-            "id",
-            id
-        );
-
-    if(updateError){
-
-        console.error(
-            "REMOVE PARTICIPANT UPDATE ERROR:",
-            updateError
-        );
-
-        showCustomAlert(
-            CUSTOM_ALERT_MESSAGES.removeError(updateError)
-        );
-
-        return;
-    }
-
-    console.log(
-        "Participant marked removed:",
-        id
-    );
 
     /*
-     * Do NOT remove the participant from
-     * the participants array here.
-     *
-     * The existing Supabase realtime UPDATE
-     * handler will do that when it receives
-     * status = "removed".
-     */
+       Do NOT remove the participant from the participants
+       array here.
+
+       The existing Supabase realtime UPDATE handler will
+       receive status = "removed" and perform the normal
+       participant-state cleanup.
+    */
+
 
     /*
-     * Clean up administrator chat state.
-     */
+       Clean up administrator chat state.
+    */
+
     delete adminChatThreads[String(id)];
 
 
@@ -6869,45 +6912,18 @@ closeParticipantWebRTC(
 
     }
 
+
     /*
-     * Give the participant browser a moment
-     * to receive the "removed" realtime event,
-     * then permanently delete the database row.
-     */
-    setTimeout(
-        async function(){
+       IMPORTANT:
 
-            const {
-                error: deleteError
-            } =
-            await supabaseClient
-                .from(
-                    "conference_participants"
-                )
-                .delete()
-                .eq(
-                    "id",
-                    id
-                );
+       The old browser-side delayed DELETE has intentionally
+       been removed.
 
-            if(deleteError){
-
-                console.error(
-                    "REMOVE PARTICIPANT DELETE ERROR:",
-                    deleteError
-                );
-
-                return;
-            }
-
-            console.log(
-                "Participant permanently deleted:",
-                id
-            );
-
-        },
-        1500
-    );
+       The authoritative database state is now "removed".
+       Database cleanup, if desired later, belongs behind an
+       appropriate trusted server-side authority boundary and
+       must not be performed by the administrator browser.
+    */
 
 }
 
