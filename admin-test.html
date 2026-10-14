@@ -6583,33 +6583,32 @@ async function allowParticipant(id){
 
 
     /*
-       Update the participant's status.
+       SECURITY BOUNDARY
+
+       Administrator approval must not directly update
+       conference_participants.
+
+       The authenticated administrator requests approval
+       through the secure database RPC. The RPC establishes
+       whether the signed-in user administers the organization
+       that owns this participant's conference room and permits
+       only the waiting -> approved transition.
     */
 
     const {
         data,
         error
     } =
-    await supabaseClient
-        .from("conference_participants")
-        .update({
-
-            status: "approved",
-
-            updated_at:
-                new Date().toISOString()
-
-        })
-        .eq(
-            "id",
-            id
-        )
-        .select()
-        .single();
+    await supabaseClient.rpc(
+        "approve_conference_participant",
+        {
+            requested_participant_id: id
+        }
+    );
 
 
     /*
-       Check for database error.
+       Check for authorization/database error.
     */
 
     if(error){
@@ -6624,14 +6623,43 @@ async function allowParticipant(id){
         );
 
         return;
-
     }
 
 
     console.log(
-        "Participant approved in database:",
+        "Participant approved through secure RPC:",
         data
     );
+
+
+    /*
+       The administrator already has the waiting participant's
+       normal conference data in local state.
+
+       The secure approval RPC establishes the state transition;
+       it does not need to become a new source of participant
+       display data for this browser.
+    */
+
+    const waitingParticipant =
+        waitingParticipants.find(
+            p => p.id === id
+        );
+
+
+    if(!waitingParticipant){
+
+        console.error(
+            "APPROVED PARTICIPANT NOT FOUND IN WAITING STATE:",
+            id
+        );
+
+        showCustomAlert(
+            "Participant was approved, but the local waiting-room record could not be found."
+        );
+
+        return;
+    }
 
 
     /*
@@ -6655,19 +6683,19 @@ async function allowParticipant(id){
     const participant = {
 
         id:
-            data.id,
+            waitingParticipant.id,
 
         name:
-            data.participant_name,
+            waitingParticipant.name,
 
         cameraOn:
-            data.camera_on,
+            waitingParticipant.cameraOn,
 
         micOn:
-            data.mic_on,
+            waitingParticipant.micOn,
 
         micLocked:
-            data.mic_locked
+            waitingParticipant.micLocked
 
     };
 
@@ -6698,23 +6726,23 @@ async function allowParticipant(id){
        Put participant into a video tile.
     */
 
-assignParticipantToTile(
-    participant
-);
+    assignParticipantToTile(
+        participant
+    );
 
 
-/*
- * Start the administrator's receive-only
- * WebRTC connection with this participant.
- *
- * Administrator camera and microphone media
- * are not required to receive participant
- * video or audio.
- */
+    /*
+     * Start the administrator's receive-only
+     * WebRTC connection with this participant.
+     *
+     * Administrator camera and microphone media
+     * are not required to receive participant
+     * video or audio.
+     */
 
-await createAdminPeerConnection(
-    participant.id
-);
+    await createAdminPeerConnection(
+        participant.id
+    );
 
 }
 
