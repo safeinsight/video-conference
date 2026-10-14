@@ -949,16 +949,16 @@ input {
         border-top: 2px solid #444;
     }
 
-    .adminControls {
+    /*
+       Mobile administrator view:
+       Hide participant control buttons from the video tiles only.
 
-        display: flex;
-    }
+       Camera, microphone, microphone lock, and remove controls
+       remain available in the Participants panel.
+    */
 
-    .adminControls button {
-
-        font-size: 9px;
-
-        padding: 4px 5px;
+    .videoTile .adminControls {
+        display: none !important;
     }
 
 }
