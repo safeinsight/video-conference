@@ -2408,7 +2408,7 @@ console.log(
  */
 
 const CONFERENCE_BUILD =
-    "ADMIN-TEST v1.2";
+    "ADMIN-TEST v1.3";
 
 
 console.log(
@@ -6660,9 +6660,14 @@ async function allowParticipant(id){
        The administrator already has the waiting participant's
        normal conference data in local state.
 
-       The secure approval RPC establishes the state transition;
-       it does not need to become a new source of participant
-       display data for this browser.
+       The secure approval RPC establishes the authoritative
+       state transition.
+
+       IMPORTANT:
+       The waiting-room wrapper contains id/name plus the
+       original Supabase row in databaseRecord. Camera,
+       microphone, and microphone-lock state therefore come
+       from databaseRecord rather than from the wrapper itself.
     */
 
     const waitingParticipant =
@@ -6687,6 +6692,48 @@ async function allowParticipant(id){
 
 
     /*
+       Build the administrator's active participant from
+       the authoritative participant values that arrived
+       from Supabase.
+    */
+
+    const participant = {
+
+        id:
+            waitingParticipant.id,
+
+        name:
+            waitingParticipant.name,
+
+        cameraOn:
+            waitingParticipant.databaseRecord.camera_on,
+
+        micOn:
+            waitingParticipant.databaseRecord.mic_on,
+
+        micLocked:
+            waitingParticipant.databaseRecord.mic_locked
+
+    };
+
+
+    console.log(
+        "Approved participant media state:",
+        participant.id,
+        {
+            cameraOn:
+                participant.cameraOn,
+
+            micOn:
+                participant.micOn,
+
+            micLocked:
+                participant.micLocked
+        }
+    );
+
+
+    /*
        Remove participant from waiting room.
     */
 
@@ -6702,30 +6749,6 @@ async function allowParticipant(id){
     /*
        Add participant to administrator's
        active participant list.
-    */
-
-    const participant = {
-
-        id:
-            waitingParticipant.id,
-
-        name:
-            waitingParticipant.name,
-
-        cameraOn:
-            waitingParticipant.cameraOn,
-
-        micOn:
-            waitingParticipant.micOn,
-
-        micLocked:
-            waitingParticipant.micLocked
-
-    };
-
-
-    /*
-       Prevent duplicate participant entries.
     */
 
     const alreadyActive =
@@ -6756,13 +6779,13 @@ async function allowParticipant(id){
 
 
     /*
-     * Start the administrator's receive-only
-     * WebRTC connection with this participant.
-     *
-     * Administrator camera and microphone media
-     * are not required to receive participant
-     * video or audio.
-     */
+       Start the administrator's receive-only
+       WebRTC connection with this participant.
+
+       Administrator camera and microphone media
+       are not required to receive participant
+       video or audio.
+    */
 
     await createAdminPeerConnection(
         participant.id
