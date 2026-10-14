@@ -2408,7 +2408,7 @@ console.log(
  */
 
 const CONFERENCE_BUILD =
-    "ADMIN-TEST v1.6";
+    "ADMIN-TEST v1.7";
 
 
 console.log(
@@ -4625,6 +4625,16 @@ if(
     "camera"
 ){
 
+    /*
+     * The administrator's secure RPC has already established
+     * the authoritative camera state in the database.
+     *
+     * This participant browser only applies that authorized
+     * state to its local media track and interface.
+     *
+     * It must NOT perform a second direct database UPDATE.
+     */
+
     localStream
         .getVideoTracks()
         .forEach(
@@ -4660,23 +4670,6 @@ if(
         signal.enabled
     );
 
-if(window.myParticipantId){
-
-    await supabaseClient
-        .from("conference_participants")
-        .update({
-            camera_on:
-                signal.enabled,
-
-            updated_at:
-                new Date().toISOString()
-        })
-        .eq(
-            "id",
-            window.myParticipantId
-        );
-
-}
 
     console.log(
         "PARTICIPANT CAMERA CONTROL:",
@@ -8860,15 +8853,20 @@ leaveButton.addEventListener(
         ){
 
             return;
-
         }
 
 
         /*
-         * Make sure we have the participant ID.
+         * Make sure we have both pieces of the private
+         * participant authorization:
+         *
+         *     participant ID
+         *     participant credential
          */
+
         const participantId =
             window.myParticipantId;
+
 
         console.log(
             "LEAVE CLICKED - Participant ID:",
@@ -8876,10 +8874,13 @@ leaveButton.addEventListener(
         );
 
 
-        if(!participantId){
+        if(
+            !participantId ||
+            !participantCredential
+        ){
 
             console.error(
-                "LEAVE ERROR: No participant ID found."
+                "LEAVE ERROR: Secure participant session not found."
             );
 
             showCustomAlert(
@@ -8887,68 +8888,75 @@ leaveButton.addEventListener(
             );
 
             return;
-
         }
 
 
         /*
-         * DELETE participant record from Supabase.
+         * SECURITY BOUNDARY
+         *
+         * The participant browser no longer directly changes
+         * its conference_participants status.
+         *
+         * The private credential authorizes only this
+         * participant's permitted transition to LEFT.
          */
-const {
-    data,
-    error
-} =
-await supabaseClient
-    .from(
-        "conference_participants"
-    )
-    .update({
-        status: "left",
-        updated_at:
-            new Date().toISOString()
-    })
-    .eq(
-        "id",
-        participantId
-    )
-    .select()
-    .single();
 
-        /*
-         * Check for database error.
-         */
+        const {
+            error
+        } =
+        await supabaseClient.rpc(
+            "leave_conference_participant",
+            {
+                requested_participant_id:
+                    participantId,
+
+                supplied_credential:
+                    participantCredential
+            }
+        );
+
+
         if(error){
 
             console.error(
-                "LEAVE DELETE ERROR:",
+                "SECURE PARTICIPANT LEAVE ERROR:",
                 error
             );
 
             showCustomAlert(
-                CUSTOM_ALERT_MESSAGES.leaveError(error)
+                CUSTOM_ALERT_MESSAGES.leaveError(
+                    error
+                )
             );
 
             return;
-
         }
 
 
         console.log(
-    "LEAVE DELETE SUCCESS:",
-    participantId
-);
+            "SECURE PARTICIPANT LEAVE SUCCESS:",
+            participantId
+        );
 
 
         /*
-         * Clear our stored participant ID.
+         * The authoritative database transition succeeded.
+         *
+         * Clear the private browser-side participant
+         * authorization before leaving this session.
          */
+
         window.myParticipantId =
+            null;
+
+        participantCredential =
             null;
 
 
         /*
          * Stop local camera/microphone.
          */
+
         if(localStream){
 
             localStream
@@ -8967,6 +8975,7 @@ await supabaseClient
          * Stop administrator video
          * if it exists on this browser.
          */
+
         if(adminVideo.srcObject){
 
             adminVideo.srcObject
@@ -8984,6 +8993,7 @@ await supabaseClient
         /*
          * Reload the participant page.
          */
+
         window.location.reload();
 
     }
@@ -9830,85 +9840,138 @@ micButtonParticipant.addEventListener(
             return;
         }
 
-        if(!localStream){
+
+        if(
+            !localStream ||
+            !window.myParticipantId ||
+            !participantCredential
+        ){
+
+            console.error(
+                "PARTICIPANT MIC ERROR: Secure participant session is unavailable."
+            );
+
+            showCustomAlert(
+                CUSTOM_ALERT_MESSAGES.sessionNotFound
+            );
+
             return;
         }
 
+
         const tracks =
             localStream.getAudioTracks();
+
 
         if(!tracks.length){
             return;
         }
 
-        tracks.forEach(
-            track => {
-                track.enabled =
-                    !track.enabled;
+
+        /*
+         * Determine the requested state WITHOUT changing
+         * the local microphone yet.
+         *
+         * The database must authorize the change first.
+         */
+
+        const requestedMicOn =
+            !tracks[0].enabled;
+
+
+        const {
+            error
+        } =
+        await supabaseClient.rpc(
+            "set_conference_participant_microphone",
+            {
+                requested_participant_id:
+                    window.myParticipantId,
+
+                supplied_credential:
+                    participantCredential,
+
+                requested_mic_on:
+                    requestedMicOn
             }
         );
 
-        const enabled =
-            tracks[0].enabled;
 
-        micButtonParticipant.textContent =
-            enabled
-            ? "🎤 Mic ON"
-            : "🔇 Mic OFF";
+        if(error){
 
-        micButtonParticipant.classList.toggle(
-            "active",
-            enabled
-        );
+            console.error(
+                "SECURE PARTICIPANT MIC ERROR:",
+                error
+            );
+
+            /*
+             * If an administrator locked the microphone
+             * before this request reached the database,
+             * the authoritative RPC rejects the ON request.
+             *
+             * Do not change the local audio track.
+             */
+
+            return;
+        }
 
 
         /*
-         * Save microphone state to Supabase
-         * so the administrator sees the
-         * correct status.
+         * The credential-protected database operation
+         * succeeded.
+         *
+         * Only now apply the authorized state locally.
          */
-        if(window.myParticipantId){
 
-            const {
-                error
-            } =
-            await supabaseClient
-                .from(
-                    "conference_participants"
-                )
-                .update({
-                    mic_on:
-                        enabled,
-                    updated_at:
-                        new Date().toISOString()
-                })
-                .eq(
-                    "id",
-                    window.myParticipantId
-                );
+        tracks.forEach(
+            track => {
 
-            if(error){
-
-                console.error(
-                    "MIC STATUS UPDATE ERROR:",
-                    error
-                );
+                track.enabled =
+                    requestedMicOn;
 
             }
+        );
 
-        }
+
+        micButtonParticipant.textContent =
+            requestedMicOn
+            ? "🎤 Mic ON"
+            : "🔇 Mic OFF";
+
+
+        micButtonParticipant.classList.toggle(
+            "active",
+            requestedMicOn
+        );
+
+
+        console.log(
+            "Secure participant microphone change:",
+            requestedMicOn
+        );
 
     }
 );
+
 
 cameraButtonParticipant.addEventListener(
     "click",
     async function(){
 
+        /*
+         * Preserve the existing mirror workflow.
+         *
+         * Mirror authorization is separate from the normal
+         * participant credential established by Knock and
+         * will be handled separately rather than pretending
+         * that a mirror browser possesses that credential.
+         */
+
         if(isMirror){
 
             mirrorCameraOn =
                 !mirrorCameraOn;
+
 
             await sendWebRTCSignal({
 
@@ -9933,18 +9996,23 @@ cameraButtonParticipant.addEventListener(
 
             });
 
+
             cameraButtonParticipant.textContent =
                 mirrorCameraOn
                 ? "📹 Camera ON"
                 : "📹 Camera OFF";
+
 
             cameraButtonParticipant.classList.toggle(
                 "active",
                 mirrorCameraOn
             );
 
+
             await supabaseClient
-                .from("conference_participants")
+                .from(
+                    "conference_participants"
+                )
                 .update({
                     camera_on:
                         mirrorCameraOn,
@@ -9957,92 +10025,138 @@ cameraButtonParticipant.addEventListener(
                     mirrorParticipantId
                 );
 
+
             return;
         }
 
 
-        if(!localStream){
+        if(
+            !localStream ||
+            !window.myParticipantId ||
+            !participantCredential
+        ){
+
+            console.error(
+                "PARTICIPANT CAMERA ERROR: Secure participant session is unavailable."
+            );
+
+            showCustomAlert(
+                CUSTOM_ALERT_MESSAGES.sessionNotFound
+            );
+
             return;
         }
+
 
         const tracks =
             localStream.getVideoTracks();
+
 
         if(!tracks.length){
             return;
         }
 
-        tracks.forEach(
-            track => {
-                track.enabled =
-                    !track.enabled;
+
+        /*
+         * Determine the requested state WITHOUT changing
+         * the local camera yet.
+         *
+         * The credential-protected RPC must authorize the
+         * state change first.
+         */
+
+        const requestedCameraOn =
+            !tracks[0].enabled;
+
+
+        const {
+            error
+        } =
+        await supabaseClient.rpc(
+            "set_conference_participant_camera",
+            {
+                requested_participant_id:
+                    window.myParticipantId,
+
+                supplied_credential:
+                    participantCredential,
+
+                requested_camera_on:
+                    requestedCameraOn
             }
         );
 
-        const enabled =
-            tracks[0].enabled;
 
-        participantLocalVideo.style.display =
-            enabled
-            ? "block"
-            : "none";
+        if(error){
 
-        participantVideoPlaceholder.style.display =
-            enabled
-            ? "none"
-            : "flex";
+            console.error(
+                "SECURE PARTICIPANT CAMERA ERROR:",
+                error
+            );
 
-        cameraButtonParticipant.textContent =
-            enabled
-            ? "📹 Camera ON"
-            : "📹 Camera OFF";
-
-        cameraButtonParticipant.classList.toggle(
-            "active",
-            enabled
-        );
+            return;
+        }
 
 
         /*
-         * Save camera state to Supabase
-         * so the administrator sees the
-         * correct status.
+         * The credential-protected database operation
+         * succeeded.
+         *
+         * Only now apply the authorized state locally.
          */
-        if(window.myParticipantId){
 
-            const {
-                error
-            } =
-            await supabaseClient
-                .from(
-                    "conference_participants"
-                )
-                .update({
-                    camera_on:
-                        enabled,
-                    updated_at:
-                        new Date().toISOString()
-                })
-                .eq(
-                    "id",
-                    window.myParticipantId
-                );
+        tracks.forEach(
+            track => {
 
-            if(error){
-
-                console.error(
-                    "CAMERA STATUS UPDATE ERROR:",
-                    error
-                );
+                track.enabled =
+                    requestedCameraOn;
 
             }
+        );
 
-        }
+
+        participantLocalVideo.style.display =
+            requestedCameraOn
+            ? "block"
+            : "none";
+
+
+        participantVideoPlaceholder.style.display =
+            requestedCameraOn
+            ? "none"
+            : "flex";
+
+
+        cameraButtonParticipant.textContent =
+            requestedCameraOn
+            ? "📹 Camera ON"
+            : "📹 Camera OFF";
+
+
+        cameraButtonParticipant.classList.toggle(
+            "active",
+            requestedCameraOn
+        );
+
+
+        console.log(
+            "Secure participant camera change:",
+            requestedCameraOn
+        );
 
     }
 );
 
-leaveButtonParticipant.addEventListener("click", function(){ leaveButton.click(); });
+
+leaveButtonParticipant.addEventListener(
+    "click",
+    function(){
+
+        leaveButton.click();
+
+    }
+);
+
 
 /* =========================================================
    ESCAPE HTML
