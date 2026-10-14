@@ -2408,7 +2408,7 @@ console.log(
  */
 
 const CONFERENCE_BUILD =
-    "ADMIN-TEST v1.7";
+    "ADMIN-TEST v1.8";
 
 
 console.log(
@@ -6464,158 +6464,150 @@ function updateAdministratorParticipant(participant){
 
 
     /*
-       Participant was denied.
-       Remove them from the active list.
+       Participant is no longer active.
+
+       Denied, removed, and voluntarily-left participants
+       disappear from the administrator's active interface.
+
+       IMPORTANT:
+       Their authoritative database record is preserved.
+       This function performs UI/WebRTC cleanup only.
     */
 
-if(
-    participant.status === "denied" ||
-    participant.status === "removed" ||
-    participant.status === "left"
-){
-
-    /*
-     * Immediately remove this participant from the
-     * administrator's active participant array.
-     *
-     * Use String comparison so the removal works
-     * regardless of whether the IDs arrive as strings
-     * or another equivalent type.
-     */
-    participants =
-        participants.filter(
-            p =>
-                String(p.id) !==
-                String(participant.id)
-        );
-
-    /*
-     * IMMEDIATELY remove the participant's control-panel
-     * entry from the administrator view.
-     */
-    document
-        .querySelectorAll(
-            ".participantControl[data-participant-id]"
-        )
-        .forEach(
-            control => {
-
-                if(
-                    String(
-                        control.dataset.participantId
-                    ) === String(
-                        participant.id
-                    )
-                ){
-
-                    control.remove();
-
-                }
-
-            }
-        );
-
-    delete adminChatThreads[String(participant.id)];
-
-
-if(openAdminChatThread === String(participant.id)){
-    openAdminChatThread = null;
-}
-
-    /*
-     * Close the participant's WebRTC connection
-     * immediately when they leave.
-     */
-    closeParticipantWebRTC(
-        participant.id
-    );
-    
-    /*
-     * Clear the participant's video tile.
-     */
-    document
-        .querySelectorAll(
-            ".videoTile[data-participant-id]"
-        )
-        .forEach(
-            tile => {
-
-                if(
-                    String(
-                        tile.dataset.participantId
-                    ) === String(
-                        participant.id
-                    )
-                ){
-
-                    clearParticipantTile(
-                        tile
-                    );
-
-                }
-
-            }
-        );
-
-
-    /*
-     * Refresh administrator participant panel.
-     */
-    renderParticipants();
-
-
-    /*
-     * If participant left voluntarily,
-     * permanently delete their database row.
-     */
     if(
+        participant.status === "denied" ||
+        participant.status === "removed" ||
         participant.status === "left"
     ){
 
-        console.log(
-            "Participant left voluntarily. Deleting database record:",
-            participant.id
-        );
+        /*
+         * Immediately remove this participant from the
+         * administrator's active participant array.
+         *
+         * Use String comparison so the removal works
+         * regardless of whether the IDs arrive as strings
+         * or another equivalent type.
+         */
+
+        participants =
+            participants.filter(
+                p =>
+                    String(p.id) !==
+                    String(participant.id)
+            );
 
 
-        supabaseClient
-            .from(
-                "conference_participants"
+        /*
+         * Immediately remove the participant's control-panel
+         * entry from the administrator view.
+         */
+
+        document
+            .querySelectorAll(
+                ".participantControl[data-participant-id]"
             )
-            .delete()
-            .eq(
-                "id",
-                participant.id
-            )
-            .then(
-                function(result){
+            .forEach(
+                control => {
 
-                    if(result.error){
+                    if(
+                        String(
+                            control.dataset.participantId
+                        ) === String(
+                            participant.id
+                        )
+                    ){
 
-                        console.error(
-                            "DELETE LEFT PARTICIPANT ERROR:",
-                            result.error
-                        );
-
-                        return;
+                        control.remove();
 
                     }
-
-
-                    console.log(
-                        "LEFT PARTICIPANT DELETED FROM SUPABASE:",
-                        participant.id
-                    );
 
                 }
             );
 
+
+        delete adminChatThreads[
+            String(participant.id)
+        ];
+
+
+        if(
+            openAdminChatThread ===
+            String(participant.id)
+        ){
+
+            openAdminChatThread =
+                null;
+
+        }
+
+
+        /*
+         * Close the participant's WebRTC connection
+         * immediately when they are no longer active.
+         */
+
+        closeParticipantWebRTC(
+            participant.id
+        );
+
+
+        /*
+         * Clear the participant's video tile.
+         */
+
+        document
+            .querySelectorAll(
+                ".videoTile[data-participant-id]"
+            )
+            .forEach(
+                tile => {
+
+                    if(
+                        String(
+                            tile.dataset.participantId
+                        ) === String(
+                            participant.id
+                        )
+                    ){
+
+                        clearParticipantTile(
+                            tile
+                        );
+
+                    }
+
+                }
+            );
+
+
+        /*
+         * Refresh administrator participant panel.
+         */
+
+        renderParticipants();
+
+
+        /*
+         * SECURITY / RECORD PRESERVATION
+         *
+         * Do NOT delete conference_participants here.
+         *
+         * A voluntary departure has already been
+         * authoritatively established by the secure
+         * leave_conference_participant RPC as:
+         *
+         *     status = "left"
+         *
+         * Denied and removed states are likewise
+         * authoritative database states.
+         *
+         * This browser's responsibility is only to clean
+         * up the live conference interface.
+         */
+
+        return;
+
     }
-
-
-    return;
-
-}
 
 
     /*
@@ -6672,6 +6664,7 @@ if(openAdminChatThread === String(participant.id)){
     }
 
 }
+
 
 /* =========================================================
    ALLOW PARTICIPANT
@@ -9959,74 +9952,26 @@ cameraButtonParticipant.addEventListener(
     async function(){
 
         /*
-         * Preserve the existing mirror workflow.
+         * Mirror mode has no participant camera-control
+         * authority.
          *
-         * Mirror authorization is separate from the normal
-         * participant credential established by Knock and
-         * will be handled separately rather than pretending
-         * that a mirror browser possesses that credential.
+         * The mirror is a receive-only display opened by an
+         * authorized administrator for participant screen
+         * sharing. Its participant controls are hidden.
+         *
+         * Fail closed if this handler is ever invoked from
+         * mirror mode rather than allowing the mirror URL to
+         * mutate a participant record.
          */
 
         if(isMirror){
 
-            mirrorCameraOn =
-                !mirrorCameraOn;
-
-
-            await sendWebRTCSignal({
-
-                type:
-                    "participant-media-control",
-
-                senderId:
-                    "mirror-" +
-                    mirrorParticipantId,
-
-                targetId:
-                    mirrorParticipantId,
-
-                participantId:
-                    mirrorParticipantId,
-
-                media:
-                    "camera",
-
-                enabled:
-                    mirrorCameraOn
-
-            });
-
-
-            cameraButtonParticipant.textContent =
-                mirrorCameraOn
-                ? "📹 Camera ON"
-                : "📹 Camera OFF";
-
-
-            cameraButtonParticipant.classList.toggle(
-                "active",
-                mirrorCameraOn
+            console.warn(
+                "Mirror camera control ignored."
             );
 
-
-            await supabaseClient
-                .from(
-                    "conference_participants"
-                )
-                .update({
-                    camera_on:
-                        mirrorCameraOn,
-
-                    updated_at:
-                        new Date().toISOString()
-                })
-                .eq(
-                    "id",
-                    mirrorParticipantId
-                );
-
-
             return;
+
         }
 
 
@@ -10045,6 +9990,7 @@ cameraButtonParticipant.addEventListener(
             );
 
             return;
+
         }
 
 
@@ -10053,7 +9999,9 @@ cameraButtonParticipant.addEventListener(
 
 
         if(!tracks.length){
+
             return;
+
         }
 
 
@@ -10095,6 +10043,7 @@ cameraButtonParticipant.addEventListener(
             );
 
             return;
+
         }
 
 
