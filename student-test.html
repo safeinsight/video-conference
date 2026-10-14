@@ -2361,6 +2361,15 @@ body.mirrorMode #app {
    SUPABASE
 ========================================================= */
 
+const STUDENT_TEST_BUILD =
+    "STUDENT-TEST v1.1";
+
+console.log(
+    "Student Test Build:",
+    STUDENT_TEST_BUILD
+);
+
+
 const SUPABASE_URL =
     "https://ohrkwtcsprzvgkqidcei.supabase.co";
 
@@ -2410,6 +2419,46 @@ let participants = [];
 let waitingParticipants = [];
 
 let nextParticipantId = 1;
+
+/*
+ * Private participant credential.
+ *
+ * This credential belongs only to this participant browser
+ * session. The raw value is never stored in the participant
+ * table and is never placed in the URL.
+ */
+let participantCredential = null;
+
+
+/*
+ * Generate a cryptographically random participant credential.
+ *
+ * The secure participant creation RPC stores only the
+ * cryptographic verifier/hash in the database.
+ */
+function generateParticipantCredential(){
+
+    const bytes =
+        new Uint8Array(32);
+
+    crypto.getRandomValues(
+        bytes
+    );
+
+    let binary = "";
+
+    bytes.forEach(
+        byte => {
+            binary +=
+                String.fromCharCode(byte);
+        }
+    );
+
+    return btoa(binary)
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+}
 
 /* =========================================================
    WEBRTC STATE
@@ -3237,7 +3286,6 @@ knockButton.addEventListener(
             nameInput.focus();
 
             return;
-
         }
 
 
@@ -3249,9 +3297,8 @@ knockButton.addEventListener(
 
 
         /*
-           Ask for camera and microphone permission.
-        */
-
+         * Ask for camera and microphone permission.
+         */
         try{
 
             localStream =
@@ -3260,21 +3307,21 @@ knockButton.addEventListener(
                     audio:true
                 });
 
-        const audioTracks =
-    localStream.getAudioTracks();
+            const audioTracks =
+                localStream.getAudioTracks();
 
-audioTracks.forEach(
-    track => {
-        track.enabled = false;
-    }
-);
+            audioTracks.forEach(
+                track => {
+                    track.enabled = false;
+                }
+            );
 
-micButtonParticipant.textContent =
-    "🔇 Mic OFF";
+            micButtonParticipant.textContent =
+                "🔇 Mic OFF";
 
-micButtonParticipant.classList.remove(
-    "active"
-);
+            micButtonParticipant.classList.remove(
+                "active"
+            );
 
         }catch(error){
 
@@ -3287,49 +3334,50 @@ micButtonParticipant.classList.remove(
 
 
         /*
-           Create participant record.
-        */
+         * Generate this participant's private credential.
+         *
+         * Do not commit it to application state until
+         * participant creation succeeds.
+         */
+        const requestedCredential =
+            generateParticipantCredential();
 
+
+        /*
+         * Securely create the participant.
+         *
+         * The browser no longer directly INSERTs into
+         * conference_participants.
+         */
         const {
             data,
             error
         } =
-        await supabaseClient
-            .from(
-                "conference_participants"
-            )
-            .insert({
-
-                room_id:
+        await supabaseClient.rpc(
+            "create_conference_participant",
+            {
+                requested_room_id:
                     ROOM_ID,
 
-                participant_name:
+                requested_participant_name:
                     name,
 
-                role:
-                    "participant",
-
-                status:
-                    "waiting",
-
-                camera_on:
+                requested_camera_on:
                     true,
 
-                mic_on:
+                requested_mic_on:
                     false,
 
-                mic_locked:
-                    false
-
-            })
-            .select()
-            .single();
+                requested_credential:
+                    requestedCredential
+            }
+        );
 
 
         if(error){
 
             console.error(
-                "Knock error:",
+                "SECURE KNOCK ERROR:",
                 error
             );
 
@@ -3344,40 +3392,39 @@ micButtonParticipant.classList.remove(
                 "🔔 Knock to Enter";
 
             return;
-
         }
 
 
         /*
-           Save our participant ID.
+         * Participant creation succeeded.
+         *
+         * Keep the raw credential only in this browser
+         * session and remember our participant ID.
+         */
+        participantCredential =
+            requestedCredential;
 
-           We will need this later for WebRTC.
-        */
-
-window.myParticipantId =
-    data.id;
-
-/*
- * Create the participant WebRTC
- * peer connection now, while we
- * are waiting for administrator
- * approval.
- */
-
-startParticipantWebRTC(
-    data
-);
-
-console.log(
-    "Knock successful:",
-    data
-);
+        window.myParticipantId =
+            data.id;
 
 
         /*
-           Show waiting screen.
-        */
+         * Create the participant WebRTC peer connection
+         * while waiting for administrator approval.
+         */
+        startParticipantWebRTC(
+            data
+        );
 
+        console.log(
+            "Secure knock successful:",
+            data
+        );
+
+
+        /*
+         * Show waiting screen.
+         */
         waitingName.textContent =
             name;
 
@@ -3397,13 +3444,11 @@ console.log(
 
 
         /*
-           Listen for administrator decision.
-        */
-
+         * Listen for administrator decision.
+         */
         subscribeToMyParticipant(
             data.id
         );
-
     }
 );
 
