@@ -4846,6 +4846,30 @@ const answer =
    ADMINISTRATOR WEBRTC CONNECTION
 ========================================================= */
 
+/*
+ * Participant ICE candidates can arrive before the
+ * administrator has accepted that participant's answer.
+ *
+ * Keep a separate queue for each participant so signaling
+ * timing does not cause valid ICE candidates to be lost.
+ */
+
+const pendingAdminIceCandidates =
+    new Map();
+
+
+/*
+ * Keep one administrator-side remote MediaStream for each
+ * participant.
+ *
+ * Do not depend on event.streams[0] being populated by every
+ * browser. Incoming tracks are explicitly collected here.
+ */
+
+const adminRemoteStreams =
+    new Map();
+
+
 async function createAdminPeerConnection(
     participantId
 ){
@@ -4854,26 +4878,6 @@ async function createAdminPeerConnection(
         "Creating administrator WebRTC connection for:",
         participantId
     );
-
-
-    /*
-     * Make absolutely sure the administrator
-     * media stream exists before creating
-     * the offer.
-     */
-
-    await initializeAdministratorMedia();
-
-
-    if(!localStream){
-
-        console.error(
-            "ADMIN WEBRTC ABORTED: administrator localStream does not exist."
-        );
-
-        return null;
-
-    }
 
 
     /*
@@ -4894,9 +4898,17 @@ async function createAdminPeerConnection(
         return adminPeerConnections.get(
             participantId
         );
-
     }
 
+
+    /*
+     * The administrator does NOT need a local camera or
+     * microphone stream in order to receive participant
+     * media.
+     *
+     * Administrator media is acquired separately only when
+     * the administrator explicitly turns camera or mic on.
+     */
 
     const peerConnection =
         new RTCPeerConnection(
@@ -4909,33 +4921,51 @@ async function createAdminPeerConnection(
         peerConnection
     );
 
-/*
- * Tell WebRTC that the administrator
- * wants to RECEIVE participant video
- * and audio.
- *
- * The administrator does NOT send
- * media to the participant.
- */
 
-peerConnection.addTransceiver(
-    "video",
-    {
-        direction: "recvonly"
-    }
-);
+    /*
+     * Prepare a dedicated remote stream for this participant.
+     */
 
-peerConnection.addTransceiver(
-    "audio",
-    {
-        direction: "recvonly"
-    }
-);
+    const remoteStream =
+        new MediaStream();
+
+    adminRemoteStreams.set(
+        participantId,
+        remoteStream
+    );
 
 
     /*
-     * Receive participant camera
-     * and microphone.
+     * Tell WebRTC that the administrator wants to RECEIVE
+     * participant video and audio.
+     *
+     * The administrator does NOT send media to the
+     * participant through this connection.
+     */
+
+    peerConnection.addTransceiver(
+        "video",
+        {
+            direction:
+                "recvonly"
+        }
+    );
+
+    peerConnection.addTransceiver(
+        "audio",
+        {
+            direction:
+                "recvonly"
+        }
+    );
+
+
+    /*
+     * Receive participant camera and microphone.
+     *
+     * Do not rely exclusively on event.streams[0].
+     * Some browser/device combinations can deliver the
+     * individual track without a populated streams array.
      */
 
     peerConnection.ontrack =
@@ -4944,29 +4974,131 @@ peerConnection.addTransceiver(
             console.log(
                 "ADMIN RECEIVED PARTICIPANT TRACK:",
                 participantId,
-                event
+                {
+                    kind:
+                        event.track.kind,
+
+                    id:
+                        event.track.id,
+
+                    readyState:
+                        event.track.readyState,
+
+                    muted:
+                        event.track.muted,
+
+                    streamCount:
+                        event.streams
+                        ? event.streams.length
+                        : 0
+                }
             );
 
 
-            const remoteStream =
-                event.streams[0];
-
-
-            if(!remoteStream){
-
-                console.warn(
-                    "Participant remote stream unavailable:",
+            let participantRemoteStream =
+                adminRemoteStreams.get(
                     participantId
                 );
 
-                return;
+
+            if(!participantRemoteStream){
+
+                participantRemoteStream =
+                    new MediaStream();
+
+                adminRemoteStreams.set(
+                    participantId,
+                    participantRemoteStream
+                );
 
             }
 
 
+            /*
+             * Explicitly add the received track if it is not
+             * already represented in our participant stream.
+             */
+
+            const trackAlreadyPresent =
+                participantRemoteStream
+                .getTracks()
+                .some(
+                    function(existingTrack){
+
+                        return (
+                            existingTrack.id ===
+                            event.track.id
+                        );
+
+                    }
+                );
+
+
+            if(!trackAlreadyPresent){
+
+                participantRemoteStream.addTrack(
+                    event.track
+                );
+
+            }
+
+
+            /*
+             * Track diagnostics make a future black-screen
+             * failure visible in the Console.
+             */
+
+            event.track.onunmute =
+                function(){
+
+                    console.log(
+                        "ADMIN PARTICIPANT TRACK UNMUTED:",
+                        participantId,
+                        event.track.kind,
+                        event.track.id
+                    );
+
+                };
+
+
+            event.track.onmute =
+                function(){
+
+                    console.warn(
+                        "ADMIN PARTICIPANT TRACK MUTED:",
+                        participantId,
+                        event.track.kind,
+                        event.track.id
+                    );
+
+                };
+
+
+            event.track.onended =
+                function(){
+
+                    console.warn(
+                        "ADMIN PARTICIPANT TRACK ENDED:",
+                        participantId,
+                        event.track.kind,
+                        event.track.id
+                    );
+
+                };
+
+
+            /*
+             * Attach the assembled participant stream.
+             *
+             * Audio tracks may arrive before video tracks,
+             * which is fine. The same MediaStream object is
+             * retained and the video track is added when it
+             * arrives.
+             */
+
             attachRemoteParticipantStream(
                 participantId,
-                remoteStream
+                participantRemoteStream
             );
 
         };
@@ -4981,9 +5113,21 @@ peerConnection.addTransceiver(
 
             if(!event.candidate){
 
-                return;
+                console.log(
+                    "ADMIN ICE GATHERING COMPLETE:",
+                    participantId
+                );
 
+                return;
             }
+
+
+            console.log(
+                "ADMIN SENDING ICE CANDIDATE:",
+                participantId,
+                event.candidate.type ||
+                "unknown-type"
+            );
 
 
             await sendWebRTCSignal({
@@ -5009,7 +5153,25 @@ peerConnection.addTransceiver(
 
 
     /*
-     * Monitor connection state.
+     * Monitor ICE state independently from the overall
+     * connection state. This tells us where a connection
+     * fails instead of leaving only a black video tile.
+     */
+
+    peerConnection.oniceconnectionstatechange =
+        function(){
+
+            console.log(
+                "ADMIN ICE CONNECTION STATE:",
+                participantId,
+                peerConnection.iceConnectionState
+            );
+
+        };
+
+
+    /*
+     * Monitor overall WebRTC connection state.
      */
 
     peerConnection.onconnectionstatechange =
@@ -5042,7 +5204,16 @@ peerConnection.addTransceiver(
 
                 console.error(
                     "WEBRTC CONNECTION FAILED:",
-                    participantId
+                    participantId,
+                    {
+                        iceConnectionState:
+                            peerConnection
+                            .iceConnectionState,
+
+                        signalingState:
+                            peerConnection
+                            .signalingState
+                    }
                 );
 
             }
@@ -5060,6 +5231,12 @@ peerConnection.addTransceiver(
 
     await peerConnection.setLocalDescription(
         offer
+    );
+
+
+    console.log(
+        "Administrator local WebRTC offer established:",
+        participantId
     );
 
 
@@ -5118,7 +5295,6 @@ async function handleAdminWebRTCSignal(
         );
 
         return;
-
     }
 
 
@@ -5137,27 +5313,85 @@ async function handleAdminWebRTCSignal(
         "ice-candidate"
     ){
 
+        if(!signal.candidate){
+
+            return;
+        }
+
+
+        /*
+         * A candidate may arrive before the administrator
+         * peer connection exists or before the participant
+         * answer has been installed as the remote
+         * description.
+         *
+         * Queue it instead of throwing it away.
+         */
+
         if(
-            peerConnection &&
-            signal.candidate
+            !peerConnection ||
+            !peerConnection.remoteDescription
         ){
 
-            try{
-
-                await peerConnection.addIceCandidate(
-                    signal.candidate
+            let pendingCandidates =
+                pendingAdminIceCandidates.get(
+                    participantId
                 );
 
-            }catch(error){
 
-                console.error(
-                    "ADMIN ICE CANDIDATE ERROR:",
-                    error
+            if(!pendingCandidates){
+
+                pendingCandidates =
+                    [];
+
+                pendingAdminIceCandidates.set(
+                    participantId,
+                    pendingCandidates
                 );
 
             }
 
+
+            pendingCandidates.push(
+                signal.candidate
+            );
+
+
+            console.log(
+                "Queued administrator-side participant ICE candidate:",
+                participantId,
+                "queue length:",
+                pendingCandidates.length
+            );
+
+
+            return;
+
         }
+
+
+        try{
+
+            await peerConnection.addIceCandidate(
+                signal.candidate
+            );
+
+
+            console.log(
+                "Administrator added participant ICE candidate:",
+                participantId
+            );
+
+        }catch(error){
+
+            console.error(
+                "ADMIN ICE CANDIDATE ERROR:",
+                participantId,
+                error
+            );
+
+        }
+
 
         return;
 
@@ -5181,19 +5415,92 @@ async function handleAdminWebRTCSignal(
             );
 
             return;
+        }
+
+
+        try{
+
+            await peerConnection.setRemoteDescription(
+                signal.answer
+            );
+
+
+            console.log(
+                "Administrator accepted participant answer:",
+                participantId
+            );
+
+
+            /*
+             * Now that the remote description exists, apply
+             * every participant ICE candidate that arrived
+             * early.
+             */
+
+            const pendingCandidates =
+                pendingAdminIceCandidates.get(
+                    participantId
+                ) || [];
+
+
+            if(pendingCandidates.length){
+
+                console.log(
+                    "Adding queued administrator-side ICE candidates:",
+                    participantId,
+                    pendingCandidates.length
+                );
+
+
+                for(
+                    const candidate
+                    of pendingCandidates
+                ){
+
+                    try{
+
+                        await peerConnection.addIceCandidate(
+                            candidate
+                        );
+
+
+                        console.log(
+                            "Queued administrator-side ICE candidate added:",
+                            participantId
+                        );
+
+                    }catch(error){
+
+                        console.error(
+                            "QUEUED ADMIN ICE ERROR:",
+                            participantId,
+                            error
+                        );
+
+                    }
+
+                }
+
+            }
+
+
+            pendingAdminIceCandidates.delete(
+                participantId
+            );
+
+
+        }catch(error){
+
+            console.error(
+                "ADMIN PARTICIPANT ANSWER ERROR:",
+                participantId,
+                error
+            );
 
         }
 
 
-        await peerConnection.setRemoteDescription(
-            signal.answer
-        );
-
-
-        console.log(
-            "Administrator accepted participant answer:",
-            participantId
-        );
+        return;
 
     }
 
@@ -5210,7 +5517,18 @@ function attachRemoteParticipantStream(
 
     console.log(
         "Attaching participant WebRTC stream:",
-        participantId
+        participantId,
+        {
+            videoTracks:
+                remoteStream
+                .getVideoTracks()
+                .length,
+
+            audioTracks:
+                remoteStream
+                .getAudioTracks()
+                .length
+        }
     );
 
 
@@ -5228,15 +5546,12 @@ function attachRemoteParticipantStream(
         );
 
         return;
-
     }
 
 
     /*
-     * updateParticipantTile() already creates
-     * the video element.
-     *
-     * Use that existing video element.
+     * updateParticipantTile() already creates the video
+     * element. Use that existing element.
      */
 
     const video =
@@ -5253,67 +5568,129 @@ function attachRemoteParticipantStream(
         );
 
         return;
-
     }
 
 
     /*
-     * Attach the actual WebRTC stream.
+     * Attach the assembled remote stream.
+     *
+     * The stream object remains stable while incoming audio
+     * and video tracks are added to it.
      */
 
     if(
-        video.srcObject !== remoteStream
+        video.srcObject !==
+        remoteStream
     ){
 
         video.srcObject =
             remoteStream;
 
-
-        video.autoplay =
-            true;
+    }
 
 
-        video.playsInline =
-            true;
+    video.autoplay =
+        true;
+
+    video.playsInline =
+        true;
+
+    /*
+     * Participant audio is intentionally muted here because
+     * this element is currently being used as the
+     * administrator's participant video display.
+     *
+     * Preserve the existing behavior.
+     */
+
+    video.muted =
+        true;
 
 
-        video.muted =
-            true;
+    /*
+     * Do not treat receipt of audio alone as proof that
+     * participant video is ready.
+     */
+
+    const videoTracks =
+        remoteStream.getVideoTracks();
 
 
-        video.style.display =
-            "block";
+    if(!videoTracks.length){
+
+        console.log(
+            "Administrator remote stream currently has no video track:",
+            participantId
+        );
+
+        return;
+    }
 
 
-        video.play().then(
-            function(){
+    const videoTrack =
+        videoTracks[0];
 
-                console.log(
-                    "PARTICIPANT VIDEO ATTACHED TO ADMIN TILE:",
-                    participantId
+
+    console.log(
+        "Administrator participant video track ready:",
+        participantId,
+        {
+            id:
+                videoTrack.id,
+
+            enabled:
+                videoTrack.enabled,
+
+            muted:
+                videoTrack.muted,
+
+            readyState:
+                videoTrack.readyState
+        }
+    );
+
+
+    video.style.display =
+        "block";
+
+
+    video.play().then(
+        function(){
+
+            console.log(
+                "PARTICIPANT VIDEO PLAYING ON ADMIN TILE:",
+                participantId,
+                {
+                    readyState:
+                        video.readyState,
+
+                    videoWidth:
+                        video.videoWidth,
+
+                    videoHeight:
+                        video.videoHeight
+                }
+            );
+
+        }
+    ).catch(
+        function(error){
+
+            if(
+                error.name !==
+                "AbortError"
+            ){
+
+                console.error(
+                    "PARTICIPANT VIDEO PLAY FAILED:",
+                    participantId,
+                    error
                 );
 
             }
-        ).catch(
-            function(error){
 
-                if(
-                    error.name !==
-                    "AbortError"
-                ){
-
-                    console.error(
-                        "PARTICIPANT VIDEO PLAY FAILED:",
-                        participantId,
-                        error
-                    );
-
-                }
-
-            }
-        );
-
-    }
+        }
+    );
 
 }
 
@@ -6307,17 +6684,12 @@ assignParticipantToTile(
 
 
 /*
- * Make sure the administrator camera
- * and microphone are ready before
- * creating the WebRTC offer.
- */
-
-await initializeAdministratorMedia();
-
-
-/*
- * Start WebRTC connection with
- * this participant.
+ * Start the administrator's receive-only
+ * WebRTC connection with this participant.
+ *
+ * Administrator camera and microphone media
+ * are not required to receive participant
+ * video or audio.
  */
 
 await createAdminPeerConnection(
@@ -9471,10 +9843,16 @@ async function loadConferenceParticipants(){
         "Participant state restored."
     );
 
+
+    
 /*
  * Reconnect WebRTC for participants
  * who were already approved when the
  * administrator refreshed the page.
+ *
+ * These are receive-only administrator
+ * connections. Administrator camera and
+ * microphone media are not required.
  */
 if(participants.length){
 
@@ -9485,8 +9863,6 @@ if(participants.length){
         );
 
     }
-
-    await initializeAdministratorMedia();
 
     for(
         const participant
