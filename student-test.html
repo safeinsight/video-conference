@@ -3541,7 +3541,6 @@ knockButton.addEventListener(
             const audioTracks =
                 localStream.getAudioTracks();
 
-
             audioTracks.forEach(
                 track => {
 
@@ -3610,8 +3609,8 @@ knockButton.addEventListener(
                 requested_mic_on:
                     false,
 
-supplied_credential:
-    newParticipantCredential
+                supplied_credential:
+                    newParticipantCredential
             }
         );
 
@@ -3653,22 +3652,17 @@ supplied_credential:
 
            We will need this later for WebRTC and the
            credential-authorized participant RPCs.
+
+           Do NOT create the participant WebRTC connection
+           while the participant is still waiting.
+
+           TURN authority intentionally requires an approved
+           participant. The participant status listener below
+           starts WebRTC only after administrator approval.
         */
 
         window.myParticipantId =
             data.id;
-
-
-        /*
-         * Create the participant WebRTC
-         * peer connection now, while we
-         * are waiting for administrator
-         * approval.
-         */
-
-        startParticipantWebRTC(
-            data
-        );
 
 
         console.log(
