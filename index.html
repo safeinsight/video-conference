@@ -3055,12 +3055,12 @@ if(isMirror && !isAdministrator){
 
 
 /* =========================================================
-   ADMINISTRATOR
+   ADMINISTRATOR BLOCK
 ========================================================= */
 
 function initializeAdministrator(){
 
-     document.body.classList.add("administratorMode");
+    document.body.classList.add("administratorMode");
 
     joinScreen.classList.add(
         "hidden"
@@ -3090,105 +3090,22 @@ function initializeAdministrator(){
 
 
     /*
-     * Get administrator camera
-     * and microphone.
+     * Administrator media starts completely released.
+     *
+     * Camera and microphone are acquired only when the
+     * administrator explicitly turns them on.
      */
 
-    initializeAdministratorMedia();
+    localStream = null;
 
-}
-
-/* =========================================================
-   ADMINISTRATOR MEDIA
-========================================================= */
-
-async function initializeAdministratorMedia(){
-
-    if(!isAdministrator){
-
-        return;
-
-    }
-
-
-    if(localStream){
-
-        console.log(
-            "Administrator local stream already exists."
-        );
-
-        return;
-
-    }
-
-
-    try{
-
-        localStream =
-            await navigator.mediaDevices.getUserMedia({
-
-                video:
-                    false,
-
-                audio:
-                    true
-
-            });
-
-
-        console.log(
-            "Administrator local media acquired:",
-            localStream
-        );
-
-
-        /*
-         * Set initial administrator
-         * media states.
-         */
-
-        const videoTracks =
-            localStream.getVideoTracks();
-
-        const audioTracks =
-            localStream.getAudioTracks();
-
-
-if(videoTracks.length){
-    videoTracks[0].enabled = false;
     administratorCameraOn = false;
-}
-
-if(audioTracks.length){
-    audioTracks[0].enabled = false;
     administratorMicOn = false;
-}
 
-updateAdminCameraButton("Camera OFF");
-updateAdministratorCameraStatus();
+    updateAdminCameraButton("Camera OFF");
+    updateAdministratorCameraStatus();
 
-updateAdministratorMicButton();
-updateAdministratorMicStatus();
-
-    }catch(error){
-
-        console.error(
-            "ADMINISTRATOR MEDIA ERROR:",
-            error
-        );
-
-
-        if(connectionStatus){
-
-            connectionStatus.textContent =
-                "● Camera/microphone unavailable";
-
-            connectionStatus.style.color =
-                "#ff4444";
-
-        }
-
-    }
+    updateAdministratorMicButton();
+    updateAdministratorMicStatus();
 
 }
 
