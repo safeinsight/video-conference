@@ -2494,6 +2494,16 @@ function generateParticipantCredential(){
    WEBRTC STATE
 ========================================================= */
 
+/*
+ * WebRTC always begins with the public STUN server.
+ *
+ * Approved participants may later receive temporary Cloudflare
+ * TURN servers from the secured turn-credentials Edge Function.
+ *
+ * TURN remains a fallback. WebRTC is still free to establish
+ * a direct connection through STUN whenever possible.
+ */
+
 const rtcConfiguration = {
 
     iceServers: [
@@ -2505,6 +2515,175 @@ const rtcConfiguration = {
     ]
 
 };
+
+
+/*
+ * TURN credentials are loaded only after this browser has
+ * established participant conference authority.
+ *
+ * Participant authority:
+ *     approved participant ID + private participant credential
+ *
+ * The raw participant credential and temporary TURN credentials
+ * remain only in browser memory.
+ */
+
+let turnCredentialsLoaded =
+    false;
+
+let turnCredentialsPromise =
+    null;
+
+
+/*
+ * Load temporary TURN credentials for the approved participant.
+ *
+ * Multiple WebRTC connections may start close together.
+ * Reuse one in-flight request so they do not independently
+ * request duplicate TURN credentials.
+ */
+
+async function ensureTurnCredentials(){
+
+    if(turnCredentialsLoaded){
+        return true;
+    }
+
+
+    if(turnCredentialsPromise){
+        return await turnCredentialsPromise;
+    }
+
+
+    turnCredentialsPromise =
+        (async function(){
+
+            try{
+
+                if(
+                    !window.myParticipantId ||
+                    !participantCredential
+                ){
+
+                    console.error(
+                        "TURN credentials not requested: participant authorization is unavailable."
+                    );
+
+                    return false;
+                }
+
+
+                const response =
+                    await fetch(
+                        `${SUPABASE_URL}/functions/v1/turn-credentials`,
+                        {
+                            method:
+                                "POST",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json"
+                            },
+
+                            body:
+                                JSON.stringify({
+                                    room_id:
+                                        ROOM_ID,
+
+                                    access_type:
+                                        "participant",
+
+                                    participant_id:
+                                        window.myParticipantId,
+
+                                    participant_credential:
+                                        participantCredential
+                                })
+                        }
+                    );
+
+
+                if(!response.ok){
+
+                    console.error(
+                        "TURN credential request denied:",
+                        response.status
+                    );
+
+                    return false;
+                }
+
+
+                const data =
+                    await response.json();
+
+
+                if(
+                    !Array.isArray(
+                        data.iceServers
+                    ) ||
+                    data.iceServers.length === 0
+                ){
+
+                    console.error(
+                        "TURN credential response did not contain ICE servers."
+                    );
+
+                    return false;
+                }
+
+
+                rtcConfiguration.iceServers = [
+                    {
+                        urls:
+                            "stun:stun.l.google.com:19302"
+                    },
+                    ...data.iceServers
+                ];
+
+
+                turnCredentialsLoaded =
+                    true;
+
+
+                console.log(
+                    "Secure TURN fallback ready."
+                );
+
+
+                return true;
+
+            }catch(error){
+
+                console.error(
+                    "TURN credential request failed:",
+                    error
+                );
+
+                return false;
+
+            }finally{
+
+                /*
+                 * Keep successful credentials cached in
+                 * rtcConfiguration.
+                 *
+                 * A failed request may be attempted again later
+                 * after participant authority becomes available.
+                 */
+
+                if(!turnCredentialsLoaded){
+                    turnCredentialsPromise =
+                        null;
+                }
+
+            }
+
+        })();
+
+
+    return await turnCredentialsPromise;
+}
 
 
 /*
@@ -3974,7 +4153,6 @@ async function startParticipantWebRTC(
         );
 
         return;
-
     }
 
 
@@ -3985,7 +4163,6 @@ async function startParticipantWebRTC(
         );
 
         return;
-
     }
 
 
@@ -3998,6 +4175,33 @@ async function startParticipantWebRTC(
         );
 
         return;
+    }
+
+
+    /*
+     * The approved participant has reached the point where an
+     * actual WebRTC connection is about to be created.
+     *
+     * Request temporary TURN credentials using the participant's
+     * ID and private browser-held credential.
+     *
+     * The secured Edge Function independently verifies that this
+     * participant is approved for this room.
+     *
+     * TURN remains supplemental. If the credential request fails,
+     * retain the existing STUN configuration and allow WebRTC to
+     * attempt its normal direct connection.
+     */
+
+    const participantTurnReady =
+        await ensureTurnCredentials();
+
+
+    if(!participantTurnReady){
+
+        console.warn(
+            "Participant TURN fallback unavailable. Continuing with STUN."
+        );
 
     }
 
@@ -4336,6 +4540,33 @@ async function handleParticipantMirrorWebRTCSignal(
         );
 
 
+        /*
+         * The approved participant has reached the point where
+         * the participant side of the mirror WebRTC connection
+         * is about to be created.
+         *
+         * Request temporary TURN credentials using this
+         * participant's existing secure conference authority:
+         *
+         *     participant ID + private participant credential
+         *
+         * TURN remains supplemental. If the credential request
+         * fails, preserve the existing STUN configuration and
+         * allow WebRTC to attempt its normal direct connection.
+         */
+
+        const participantMirrorTurnReady =
+            await ensureTurnCredentials();
+
+
+        if(!participantMirrorTurnReady){
+
+            console.warn(
+                "Participant mirror TURN fallback unavailable. Continuing with STUN."
+            );
+
+        }
+
 
         if(mirrorPeerConnection){
 
@@ -4486,7 +4717,6 @@ mirrorPeerConnection.addTrack(
             );
 
             return;
-
         }
 
         if(
@@ -4498,7 +4728,6 @@ mirrorPeerConnection.addTrack(
             );
 
             return;
-
         }
 
         try{
@@ -4566,7 +4795,6 @@ async function handleMirrorWebRTCSignal(
             );
 
             return;
-
         }
 
         try{
