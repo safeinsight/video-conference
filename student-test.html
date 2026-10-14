@@ -949,16 +949,16 @@ input {
         border-top: 2px solid #444;
     }
 
-    /*
-       Mobile administrator view:
-       Hide participant control buttons from the video tiles only.
+    .adminControls {
 
-       Camera, microphone, microphone lock, and remove controls
-       remain available in the Participants panel.
-    */
+        display: flex;
+    }
 
-    .videoTile .adminControls {
-        display: none !important;
+    .adminControls button {
+
+        font-size: 9px;
+
+        padding: 4px 5px;
     }
 
 }
@@ -2361,15 +2361,6 @@ body.mirrorMode #app {
    SUPABASE
 ========================================================= */
 
-const CONFERENCE_BUILD =
-    "STUDENT-TEST v1.1";
-
-console.log(
-    "BUILD:",
-    CONFERENCE_BUILD
-);
-
-
 const SUPABASE_URL =
     "https://ohrkwtcsprzvgkqidcei.supabase.co";
 
@@ -2401,7 +2392,31 @@ console.log(
     "Conference Room:",
     ROOM_ID
 );
-    
+
+
+/* =========================================================
+   BUILD VERSION
+========================================================= */
+
+/*
+ * Update this value whenever a new conference build
+ * is committed for deployment.
+ *
+ * This gives us an immediate, unmistakable indication
+ * in the browser console of which version is actually
+ * being executed.
+ */
+
+const CONFERENCE_BUILD =
+    "STUDENT-TEST v1.2";
+
+
+console.log(
+    "🚔 CONFERENCE BUILD:",
+    CONFERENCE_BUILD
+);
+
+
 /* =========================================================
    APPLICATION STATE
 ========================================================= */
@@ -2420,22 +2435,28 @@ let waitingParticipants = [];
 
 let nextParticipantId = 1;
 
+
 /*
  * Private participant credential.
  *
- * This credential belongs only to this participant browser
- * session. The raw value is never stored in the participant
- * table and is never placed in the URL.
+ * Accountless participants receive a high-entropy credential
+ * when they knock.
+ *
+ * The raw credential exists only in this browser. Supabase
+ * stores only its cryptographic hash.
+ *
+ * It is never placed in the URL.
  */
-let participantCredential = null;
+
+let participantCredential =
+    null;
 
 
 /*
- * Generate a cryptographically random participant credential.
- *
- * The secure participant creation RPC stores only the
- * cryptographic verifier/hash in the database.
+ * Generate 32 cryptographically random bytes and encode
+ * them as base64url.
  */
+
 function generateParticipantCredential(){
 
     const bytes =
@@ -2445,20 +2466,29 @@ function generateParticipantCredential(){
         bytes
     );
 
-    let binary = "";
+
+    let binary =
+        "";
 
     bytes.forEach(
         byte => {
+
             binary +=
-                String.fromCharCode(byte);
+                String.fromCharCode(
+                    byte
+                );
+
         }
     );
+
 
     return btoa(binary)
         .replace(/\+/g, "-")
         .replace(/\//g, "_")
         .replace(/=+$/g, "");
+
 }
+
 
 /* =========================================================
    WEBRTC STATE
@@ -2523,29 +2553,49 @@ let pendingParticipantIceCandidates =
     [];
 
 /* =========================================================
-   DETERMINE ADMINISTRATOR MODE
+   ADMINISTRATOR ACCESS REQUEST
 ========================================================= */
 
 /*
-   For this first prototype:
-
-   Participant:
-       index.html
-
-   Administrator:
-       index.html?admin=true
-
-   Later we will replace this with secure authentication.
-*/
+ * IMPORTANT SECURITY BOUNDARY
+ *
+ * The URL may REQUEST administrator access.
+ * It must never GRANT administrator authority.
+ *
+ * ?admin=true means only:
+ *     "This browser is requesting the administrator workflow."
+ *
+ * Actual administrator authority will be established separately
+ * through Supabase Auth and the conference authorization tables.
+ *
+ * Until that authorization succeeds:
+ *
+ *     isAdministrator MUST remain false.
+ *
+ * This preserves the existing participant workflow while
+ * preventing a URL parameter from establishing administrator
+ * authority.
+ */
 
 const params = new URLSearchParams(
     window.location.search
 );
 
-isAdministrator =
+const administratorAccessRequested =
     params.get("admin") === "true";
 
-    const isMirror =
+/*
+ * Fail closed.
+ *
+ * Nothing in the URL is allowed to change this to true.
+ * A later authorization step will do so only after the signed-in
+ * Supabase user has been proven to administer the organization
+ * that owns the requested conference room.
+ */
+isAdministrator =
+    false;
+
+const isMirror =
     params.get("mirror") === "true";
 
 const mirrorParticipantId =
@@ -3297,8 +3347,9 @@ knockButton.addEventListener(
 
 
         /*
-         * Ask for camera and microphone permission.
-         */
+           Ask for camera and microphone permission.
+        */
+
         try{
 
             localStream =
@@ -3307,14 +3358,20 @@ knockButton.addEventListener(
                     audio:true
                 });
 
+
             const audioTracks =
                 localStream.getAudioTracks();
 
+
             audioTracks.forEach(
                 track => {
-                    track.enabled = false;
+
+                    track.enabled =
+                        false;
+
                 }
             );
+
 
             micButtonParticipant.textContent =
                 "🔇 Mic OFF";
@@ -3334,21 +3391,27 @@ knockButton.addEventListener(
 
 
         /*
-         * Generate this participant's private credential.
-         *
-         * Do not commit it to application state until
-         * participant creation succeeds.
-         */
-        const requestedCredential =
+           Generate this participant's private credential.
+
+           The raw credential stays in this browser.
+           The secure RPC stores only its hash.
+        */
+
+        const newParticipantCredential =
             generateParticipantCredential();
 
 
         /*
-         * Securely create the participant.
-         *
-         * The browser no longer directly INSERTs into
-         * conference_participants.
-         */
+           Create participant through the secure RPC.
+
+           The browser no longer directly INSERTS into
+           conference_participants.
+
+           The RPC controls the fields that may be created
+           and establishes the participant credential
+           atomically with the participant record.
+        */
+
         const {
             data,
             error
@@ -3369,7 +3432,7 @@ knockButton.addEventListener(
                     false,
 
                 requested_credential:
-                    requestedCredential
+                    newParticipantCredential
             }
         );
 
@@ -3377,7 +3440,7 @@ knockButton.addEventListener(
         if(error){
 
             console.error(
-                "SECURE KNOCK ERROR:",
+                "Secure knock error:",
                 error
             );
 
@@ -3396,25 +3459,38 @@ knockButton.addEventListener(
 
 
         /*
-         * Participant creation succeeded.
-         *
-         * Keep the raw credential only in this browser
-         * session and remember our participant ID.
-         */
+           The participant and credential were created
+           successfully.
+
+           Only now retain the raw credential locally.
+        */
+
         participantCredential =
-            requestedCredential;
+            newParticipantCredential;
+
+
+        /*
+           Save our participant ID.
+
+           We will need this later for WebRTC and the
+           credential-authorized participant RPCs.
+        */
 
         window.myParticipantId =
             data.id;
 
 
         /*
-         * Create the participant WebRTC peer connection
-         * while waiting for administrator approval.
+         * Create the participant WebRTC
+         * peer connection now, while we
+         * are waiting for administrator
+         * approval.
          */
+
         startParticipantWebRTC(
             data
         );
+
 
         console.log(
             "Secure knock successful:",
@@ -3423,8 +3499,9 @@ knockButton.addEventListener(
 
 
         /*
-         * Show waiting screen.
-         */
+           Show waiting screen.
+        */
+
         waitingName.textContent =
             name;
 
@@ -3444,13 +3521,21 @@ knockButton.addEventListener(
 
 
         /*
-         * Listen for administrator decision.
-         */
+           Listen for administrator decision.
+
+           We intentionally preserve the existing
+           participant Realtime listener during this
+           transition so the current waiting-room
+           experience remains unchanged.
+        */
+
         subscribeToMyParticipant(
             data.id
         );
+
     }
 );
+
 
 /* =========================================================
    PARTICIPANT STATUS LISTENER
@@ -4540,6 +4625,16 @@ if(
     "camera"
 ){
 
+    /*
+     * The administrator's secure RPC has already established
+     * the authoritative camera state in the database.
+     *
+     * This participant browser only applies that authorized
+     * state to its local media track and interface.
+     *
+     * It must NOT perform a second direct database UPDATE.
+     */
+
     localStream
         .getVideoTracks()
         .forEach(
@@ -4575,23 +4670,6 @@ if(
         signal.enabled
     );
 
-if(window.myParticipantId){
-
-    await supabaseClient
-        .from("conference_participants")
-        .update({
-            camera_on:
-                signal.enabled,
-
-            updated_at:
-                new Date().toISOString()
-        })
-        .eq(
-            "id",
-            window.myParticipantId
-        );
-
-}
 
     console.log(
         "PARTICIPANT CAMERA CONTROL:",
@@ -6386,158 +6464,150 @@ function updateAdministratorParticipant(participant){
 
 
     /*
-       Participant was denied.
-       Remove them from the active list.
+       Participant is no longer active.
+
+       Denied, removed, and voluntarily-left participants
+       disappear from the administrator's active interface.
+
+       IMPORTANT:
+       Their authoritative database record is preserved.
+       This function performs UI/WebRTC cleanup only.
     */
 
-if(
-    participant.status === "denied" ||
-    participant.status === "removed" ||
-    participant.status === "left"
-){
-
-    /*
-     * Immediately remove this participant from the
-     * administrator's active participant array.
-     *
-     * Use String comparison so the removal works
-     * regardless of whether the IDs arrive as strings
-     * or another equivalent type.
-     */
-    participants =
-        participants.filter(
-            p =>
-                String(p.id) !==
-                String(participant.id)
-        );
-
-    /*
-     * IMMEDIATELY remove the participant's control-panel
-     * entry from the administrator view.
-     */
-    document
-        .querySelectorAll(
-            ".participantControl[data-participant-id]"
-        )
-        .forEach(
-            control => {
-
-                if(
-                    String(
-                        control.dataset.participantId
-                    ) === String(
-                        participant.id
-                    )
-                ){
-
-                    control.remove();
-
-                }
-
-            }
-        );
-
-    delete adminChatThreads[String(participant.id)];
-
-
-if(openAdminChatThread === String(participant.id)){
-    openAdminChatThread = null;
-}
-
-    /*
-     * Close the participant's WebRTC connection
-     * immediately when they leave.
-     */
-    closeParticipantWebRTC(
-        participant.id
-    );
-    
-    /*
-     * Clear the participant's video tile.
-     */
-    document
-        .querySelectorAll(
-            ".videoTile[data-participant-id]"
-        )
-        .forEach(
-            tile => {
-
-                if(
-                    String(
-                        tile.dataset.participantId
-                    ) === String(
-                        participant.id
-                    )
-                ){
-
-                    clearParticipantTile(
-                        tile
-                    );
-
-                }
-
-            }
-        );
-
-
-    /*
-     * Refresh administrator participant panel.
-     */
-    renderParticipants();
-
-
-    /*
-     * If participant left voluntarily,
-     * permanently delete their database row.
-     */
     if(
+        participant.status === "denied" ||
+        participant.status === "removed" ||
         participant.status === "left"
     ){
 
-        console.log(
-            "Participant left voluntarily. Deleting database record:",
-            participant.id
-        );
+        /*
+         * Immediately remove this participant from the
+         * administrator's active participant array.
+         *
+         * Use String comparison so the removal works
+         * regardless of whether the IDs arrive as strings
+         * or another equivalent type.
+         */
+
+        participants =
+            participants.filter(
+                p =>
+                    String(p.id) !==
+                    String(participant.id)
+            );
 
 
-        supabaseClient
-            .from(
-                "conference_participants"
+        /*
+         * Immediately remove the participant's control-panel
+         * entry from the administrator view.
+         */
+
+        document
+            .querySelectorAll(
+                ".participantControl[data-participant-id]"
             )
-            .delete()
-            .eq(
-                "id",
-                participant.id
-            )
-            .then(
-                function(result){
+            .forEach(
+                control => {
 
-                    if(result.error){
+                    if(
+                        String(
+                            control.dataset.participantId
+                        ) === String(
+                            participant.id
+                        )
+                    ){
 
-                        console.error(
-                            "DELETE LEFT PARTICIPANT ERROR:",
-                            result.error
-                        );
-
-                        return;
+                        control.remove();
 
                     }
-
-
-                    console.log(
-                        "LEFT PARTICIPANT DELETED FROM SUPABASE:",
-                        participant.id
-                    );
 
                 }
             );
 
+
+        delete adminChatThreads[
+            String(participant.id)
+        ];
+
+
+        if(
+            openAdminChatThread ===
+            String(participant.id)
+        ){
+
+            openAdminChatThread =
+                null;
+
+        }
+
+
+        /*
+         * Close the participant's WebRTC connection
+         * immediately when they are no longer active.
+         */
+
+        closeParticipantWebRTC(
+            participant.id
+        );
+
+
+        /*
+         * Clear the participant's video tile.
+         */
+
+        document
+            .querySelectorAll(
+                ".videoTile[data-participant-id]"
+            )
+            .forEach(
+                tile => {
+
+                    if(
+                        String(
+                            tile.dataset.participantId
+                        ) === String(
+                            participant.id
+                        )
+                    ){
+
+                        clearParticipantTile(
+                            tile
+                        );
+
+                    }
+
+                }
+            );
+
+
+        /*
+         * Refresh administrator participant panel.
+         */
+
+        renderParticipants();
+
+
+        /*
+         * SECURITY / RECORD PRESERVATION
+         *
+         * Do NOT delete conference_participants here.
+         *
+         * A voluntary departure has already been
+         * authoritatively established by the secure
+         * leave_conference_participant RPC as:
+         *
+         *     status = "left"
+         *
+         * Denied and removed states are likewise
+         * authoritative database states.
+         *
+         * This browser's responsibility is only to clean
+         * up the live conference interface.
+         */
+
+        return;
+
     }
-
-
-    return;
-
-}
 
 
     /*
@@ -6595,6 +6665,7 @@ if(openAdminChatThread === String(participant.id)){
 
 }
 
+
 /* =========================================================
    ALLOW PARTICIPANT
 ========================================================= */
@@ -6608,33 +6679,32 @@ async function allowParticipant(id){
 
 
     /*
-       Update the participant's status.
+       SECURITY BOUNDARY
+
+       Administrator approval must not directly update
+       conference_participants.
+
+       The authenticated administrator requests approval
+       through the secure database RPC. The RPC establishes
+       whether the signed-in user administers the organization
+       that owns this participant's conference room and permits
+       only the waiting -> approved transition.
     */
 
     const {
         data,
         error
     } =
-    await supabaseClient
-        .from("conference_participants")
-        .update({
-
-            status: "approved",
-
-            updated_at:
-                new Date().toISOString()
-
-        })
-        .eq(
-            "id",
-            id
-        )
-        .select()
-        .single();
+    await supabaseClient.rpc(
+        "approve_conference_participant",
+        {
+            requested_participant_id: id
+        }
+    );
 
 
     /*
-       Check for database error.
+       Check for authorization/database error.
     */
 
     if(error){
@@ -6649,13 +6719,89 @@ async function allowParticipant(id){
         );
 
         return;
-
     }
 
 
     console.log(
-        "Participant approved in database:",
+        "Participant approved through secure RPC:",
         data
+    );
+
+
+    /*
+       The administrator already has the waiting participant's
+       normal conference data in local state.
+
+       The secure approval RPC establishes the authoritative
+       state transition.
+
+       IMPORTANT:
+       The waiting-room wrapper contains id/name plus the
+       original Supabase row in databaseRecord. Camera,
+       microphone, and microphone-lock state therefore come
+       from databaseRecord rather than from the wrapper itself.
+    */
+
+    const waitingParticipant =
+        waitingParticipants.find(
+            p => p.id === id
+        );
+
+
+    if(!waitingParticipant){
+
+        console.error(
+            "APPROVED PARTICIPANT NOT FOUND IN WAITING STATE:",
+            id
+        );
+
+        showCustomAlert(
+            "Participant was approved, but the local waiting-room record could not be found."
+        );
+
+        return;
+    }
+
+
+    /*
+       Build the administrator's active participant from
+       the authoritative participant values that arrived
+       from Supabase.
+    */
+
+    const participant = {
+
+        id:
+            waitingParticipant.id,
+
+        name:
+            waitingParticipant.name,
+
+        cameraOn:
+            waitingParticipant.databaseRecord.camera_on,
+
+        micOn:
+            waitingParticipant.databaseRecord.mic_on,
+
+        micLocked:
+            waitingParticipant.databaseRecord.mic_locked
+
+    };
+
+
+    console.log(
+        "Approved participant media state:",
+        participant.id,
+        {
+            cameraOn:
+                participant.cameraOn,
+
+            micOn:
+                participant.micOn,
+
+            micLocked:
+                participant.micLocked
+        }
     );
 
 
@@ -6675,30 +6821,6 @@ async function allowParticipant(id){
     /*
        Add participant to administrator's
        active participant list.
-    */
-
-    const participant = {
-
-        id:
-            data.id,
-
-        name:
-            data.participant_name,
-
-        cameraOn:
-            data.camera_on,
-
-        micOn:
-            data.mic_on,
-
-        micLocked:
-            data.mic_locked
-
-    };
-
-
-    /*
-       Prevent duplicate participant entries.
     */
 
     const alreadyActive =
@@ -6723,23 +6845,23 @@ async function allowParticipant(id){
        Put participant into a video tile.
     */
 
-assignParticipantToTile(
-    participant
-);
+    assignParticipantToTile(
+        participant
+    );
 
 
-/*
- * Start the administrator's receive-only
- * WebRTC connection with this participant.
- *
- * Administrator camera and microphone media
- * are not required to receive participant
- * video or audio.
- */
+    /*
+       Start the administrator's receive-only
+       WebRTC connection with this participant.
 
-await createAdminPeerConnection(
-    participant.id
-);
+       Administrator camera and microphone media
+       are not required to receive participant
+       video or audio.
+    */
+
+    await createAdminPeerConnection(
+        participant.id
+    );
 
 }
 
@@ -6754,18 +6876,78 @@ async function removeParticipant(id){
         id
     );
 
+
     /*
-     * Immediately remove the participant's
-     * control panel entry from the administrator view.
-     *
-     * IMPORTANT:
-     * Do NOT remove the participant from the
-     * participants array here.
-     */
+       SECURITY BOUNDARY
+
+       Administrator removal must not directly update or
+       delete conference_participants.
+
+       The authenticated administrator requests removal
+       through the secure database RPC. The RPC establishes
+       whether the signed-in user administers the organization
+       that owns this participant's conference room and permits
+       only the approved -> removed transition.
+    */
+
+    const {
+        data,
+        error
+    } =
+    await supabaseClient.rpc(
+        "remove_conference_participant",
+        {
+            requested_participant_id: id
+        }
+    );
+
+
+    /*
+       Do not change the administrator's local display unless
+       the authoritative database operation succeeded.
+    */
+
+    if(error){
+
+        console.error(
+            "REMOVE PARTICIPANT ERROR:",
+            error
+        );
+
+        showCustomAlert(
+            CUSTOM_ALERT_MESSAGES.removeError(error)
+        );
+
+        return;
+    }
+
+
+    console.log(
+        "Participant removed through secure RPC:",
+        data
+    );
+
+
+    /*
+       Close the administrator's WebRTC connection
+       with this participant.
+    */
+
+    closeParticipantWebRTC(
+        id
+    );
+
+
+    /*
+       Remove the participant's control-panel entry
+       immediately from the administrator view.
+    */
+
     const participantControl =
         document.querySelector(
             `.participantControl[data-participant-id="${id}"]`
         );
+
 
     if(participantControl){
 
@@ -6773,18 +6955,12 @@ async function removeParticipant(id){
 
     }
 
-/*
- * Close the WebRTC connection.
- */
-
-closeParticipantWebRTC(
-    id
-);
 
     /*
-     * Immediately clear the participant's
-     * video tile from the administrator view.
-     */
+       Immediately clear the participant's
+       video tile from the administrator view.
+    */
+
     document
         .querySelectorAll(
             ".videoTile[data-participant-id]"
@@ -6807,56 +6983,21 @@ closeParticipantWebRTC(
             }
         );
 
-    /*
-     * Tell Supabase that the participant
-     * has been removed.
-     */
-    const {
-        error: updateError
-    } =
-    await supabaseClient
-        .from("conference_participants")
-        .update({
-            status: "removed",
-            updated_at:
-                new Date().toISOString()
-        })
-        .eq(
-            "id",
-            id
-        );
-
-    if(updateError){
-
-        console.error(
-            "REMOVE PARTICIPANT UPDATE ERROR:",
-            updateError
-        );
-
-        showCustomAlert(
-            CUSTOM_ALERT_MESSAGES.removeError(updateError)
-        );
-
-        return;
-    }
-
-    console.log(
-        "Participant marked removed:",
-        id
-    );
 
     /*
-     * Do NOT remove the participant from
-     * the participants array here.
-     *
-     * The existing Supabase realtime UPDATE
-     * handler will do that when it receives
-     * status = "removed".
-     */
+       Do NOT remove the participant from the participants
+       array here.
+
+       The existing Supabase realtime UPDATE handler will
+       receive status = "removed" and perform the normal
+       participant-state cleanup.
+    */
+
 
     /*
-     * Clean up administrator chat state.
-     */
+       Clean up administrator chat state.
+    */
+
     delete adminChatThreads[String(id)];
 
 
@@ -6866,45 +7007,18 @@ closeParticipantWebRTC(
 
     }
 
+
     /*
-     * Give the participant browser a moment
-     * to receive the "removed" realtime event,
-     * then permanently delete the database row.
-     */
-    setTimeout(
-        async function(){
+       IMPORTANT:
 
-            const {
-                error: deleteError
-            } =
-            await supabaseClient
-                .from(
-                    "conference_participants"
-                )
-                .delete()
-                .eq(
-                    "id",
-                    id
-                );
+       The old browser-side delayed DELETE has intentionally
+       been removed.
 
-            if(deleteError){
-
-                console.error(
-                    "REMOVE PARTICIPANT DELETE ERROR:",
-                    deleteError
-                );
-
-                return;
-            }
-
-            console.log(
-                "Participant permanently deleted:",
-                id
-            );
-
-        },
-        1500
-    );
+       The authoritative database state is now "removed".
+       Database cleanup, if desired later, belongs behind an
+       appropriate trusted server-side authority boundary and
+       must not be performed by the administrator browser.
+    */
 
 }
 
@@ -7413,27 +7527,34 @@ async function denyParticipant(id){
     );
 
 
+    /*
+       SECURITY BOUNDARY
+
+       Administrator denial must not directly update
+       conference_participants.
+
+       The authenticated administrator requests denial
+       through the secure database RPC. The RPC establishes
+       whether the signed-in user administers the organization
+       that owns this participant's conference room and permits
+       only the waiting -> denied transition.
+    */
+
     const {
         data,
         error
     } =
-    await supabaseClient
-        .from("conference_participants")
-        .update({
+    await supabaseClient.rpc(
+        "deny_conference_participant",
+        {
+            requested_participant_id: id
+        }
+    );
 
-            status: "denied",
 
-            updated_at:
-                new Date().toISOString()
-
-        })
-        .eq(
-            "id",
-            id
-        )
-        .select()
-        .single();
-
+    /*
+       Check for authorization/database error.
+    */
 
     if(error){
 
@@ -7447,15 +7568,22 @@ async function denyParticipant(id){
         );
 
         return;
-
     }
 
 
     console.log(
-        "Participant denied in database:",
+        "Participant denied through secure RPC:",
         data
     );
 
+
+    /*
+       Remove participant from the administrator's
+       local waiting-room display.
+
+       The secure RPC has already established the
+       authoritative denied state in the database.
+    */
 
     waitingParticipants =
         waitingParticipants.filter(
@@ -7597,14 +7725,92 @@ async function toggleParticipantCamera(id){
             p => p.id === id
         );
 
+
     if(!participant){
 
         return;
+
     }
 
 
-    participant.cameraOn =
+    /*
+       SECURITY BOUNDARY
+
+       The administrator browser may REQUEST a participant
+       camera state change, but it must not establish
+       authority itself.
+
+       The secure RPC verifies:
+
+       - there is an authenticated Supabase user
+       - the participant belongs to a known conference room
+       - that room belongs to an organization
+       - the authenticated user administers that organization
+       - the participant is currently approved
+    */
+
+    const requestedCameraOn =
         !participant.cameraOn;
+
+
+    const {
+        data,
+        error
+    } =
+    await supabaseClient.rpc(
+        "set_conference_participant_camera_admin",
+        {
+            requested_participant_id:
+                id,
+
+            requested_camera_on:
+                requestedCameraOn
+        }
+    );
+
+
+    if(error){
+
+        console.error(
+            "ADMIN PARTICIPANT CAMERA ERROR:",
+            error
+        );
+
+        showCustomAlert(
+            "Unable to change the participant camera.\n\n" +
+            error.message
+        );
+
+        return;
+
+    }
+
+
+    console.log(
+        "Administrator camera change approved through secure RPC:",
+        {
+            participantId:
+                id,
+
+            cameraOn:
+                requestedCameraOn,
+
+            result:
+                data
+        }
+    );
+
+
+    /*
+       The database has accepted the authoritative state
+       change.
+
+       Only now update local state and instruct the
+       participant browser to apply that state.
+    */
+
+    participant.cameraOn =
+        requestedCameraOn;
 
 
     await sendWebRTCSignal({
@@ -7632,6 +7838,7 @@ async function toggleParticipantCamera(id){
 
     renderParticipants();
 
+
     updateParticipantTileStatus(
         participant
     );
@@ -7650,19 +7857,92 @@ async function toggleParticipantMic(id){
             p => p.id === id
         );
 
+
     if(!participant){
 
         return;
+
     }
 
 
     /*
-     * Administrator can always
-     * change the participant microphone.
-     */
+       SECURITY BOUNDARY
+
+       The administrator browser may REQUEST a microphone
+       state change, but it must not establish authority
+       by directly updating conference_participants.
+
+       The secure RPC verifies:
+
+       - there is an authenticated Supabase user
+       - the participant belongs to a known conference room
+       - that room belongs to an organization
+       - the authenticated user administers that organization
+       - the participant is currently approved
+    */
+
+    const requestedMicOn =
+        !participant.micOn;
+
+
+    const {
+        data,
+        error
+    } =
+    await supabaseClient.rpc(
+        "set_conference_participant_mic_admin",
+        {
+            requested_participant_id:
+                id,
+
+            requested_mic_on:
+                requestedMicOn
+        }
+    );
+
+
+    if(error){
+
+        console.error(
+            "ADMIN PARTICIPANT MIC ERROR:",
+            error
+        );
+
+        showCustomAlert(
+            "Unable to change the participant microphone.\n\n" +
+            error.message
+        );
+
+        return;
+
+    }
+
+
+    console.log(
+        "Administrator microphone change approved through secure RPC:",
+        {
+            participantId:
+                id,
+
+            micOn:
+                requestedMicOn,
+
+            result:
+                data
+        }
+    );
+
+
+    /*
+       The database has accepted the authoritative state
+       change.
+
+       Only now update local state and instruct the
+       participant browser to apply that state.
+    */
 
     participant.micOn =
-        !participant.micOn;
+        requestedMicOn;
 
 
     await sendWebRTCSignal({
@@ -7690,11 +7970,13 @@ async function toggleParticipantMic(id){
 
     renderParticipants();
 
-        updateParticipantTileStatus(
+
+    updateParticipantTileStatus(
         participant
     );
 
 }
+
 
 /* =========================================================
    LOCK MICROPHONE
@@ -7707,26 +7989,86 @@ async function toggleMicLock(id){
             p => p.id === id
         );
 
+
     if(!participant){
+
         return;
+
     }
-
-
-    participant.micLocked =
-        !participant.micLocked;
-
-    console.log(
-    "MIC LOCK CLICKED:",
-    {
-        participantId: id,
-        micLocked: participant.micLocked,
-        micOn: participant.micOn
-    }
-);
 
 
     /*
-       Locking microphone automatically mutes it.
+       SECURITY BOUNDARY
+
+       Microphone locking is an administrator-authority
+       action.
+
+       The browser requests the change through the secure
+       RPC rather than directly updating
+       conference_participants.
+
+       Locking the microphone also forces the authoritative
+       microphone state OFF.
+
+       Unlocking removes the lock but does NOT automatically
+       turn the microphone back on.
+    */
+
+    const requestedMicLocked =
+        !participant.micLocked;
+
+
+    const {
+        data,
+        error
+    } =
+    await supabaseClient.rpc(
+        "set_conference_participant_mic_lock",
+        {
+            requested_participant_id:
+                id,
+
+            requested_mic_locked:
+                requestedMicLocked
+        }
+    );
+
+
+    if(error){
+
+        console.error(
+            "ADMIN PARTICIPANT MIC LOCK ERROR:",
+            error
+        );
+
+        showCustomAlert(
+            "Unable to change the participant microphone lock.\n\n" +
+            error.message
+        );
+
+        return;
+
+    }
+
+
+    /*
+       The secure RPC has now established the authoritative
+       lock state.
+
+       Update local state only after database authorization
+       succeeds.
+    */
+
+    participant.micLocked =
+        requestedMicLocked;
+
+
+    /*
+       Locking automatically mutes the participant.
+
+       Unlocking intentionally leaves the microphone OFF
+       until either the administrator or participant
+       explicitly turns it back on.
     */
 
     if(participant.micLocked){
@@ -7737,12 +8079,33 @@ async function toggleMicLock(id){
     }
 
 
+    console.log(
+        "Administrator microphone lock change approved through secure RPC:",
+        {
+            participantId:
+                id,
+
+            micLocked:
+                participant.micLocked,
+
+            micOn:
+                participant.micOn,
+
+            result:
+                data
+        }
+    );
+
+
     /*
-       Send the microphone state AND the
-       lock state to the participant.
+       The authoritative database change succeeded.
+
+       Now tell the participant browser to apply both
+       microphone and lock state.
     */
 
     await sendWebRTCSignal({
+
         type:
             "participant-media-control",
 
@@ -7768,49 +8131,8 @@ async function toggleMicLock(id){
 
 
     /*
-       Save the lock state and microphone
-       state to Supabase.
-    */
-
-    supabaseClient
-        .from(
-            "conference_participants"
-        )
-        .update({
-
-            mic_locked:
-                participant.micLocked,
-
-            mic_on:
-                participant.micOn,
-
-            updated_at:
-                new Date().toISOString()
-
-        })
-        .eq(
-            "id",
-            id
-        )
-        .then(
-            function(result){
-
-                if(result.error){
-
-                    console.error(
-                        "MIC LOCK UPDATE ERROR:",
-                        result.error
-                    );
-
-                }
-
-            }
-        );
-
-
-    /*
-       Update the existing tile without
-       destroying the WebRTC video element.
+       Update the existing tile without destroying
+       the WebRTC video element.
     */
 
     updateParticipantTileStatus(
@@ -8524,15 +8846,20 @@ leaveButton.addEventListener(
         ){
 
             return;
-
         }
 
 
         /*
-         * Make sure we have the participant ID.
+         * Make sure we have both pieces of the private
+         * participant authorization:
+         *
+         *     participant ID
+         *     participant credential
          */
+
         const participantId =
             window.myParticipantId;
+
 
         console.log(
             "LEAVE CLICKED - Participant ID:",
@@ -8540,10 +8867,13 @@ leaveButton.addEventListener(
         );
 
 
-        if(!participantId){
+        if(
+            !participantId ||
+            !participantCredential
+        ){
 
             console.error(
-                "LEAVE ERROR: No participant ID found."
+                "LEAVE ERROR: Secure participant session not found."
             );
 
             showCustomAlert(
@@ -8551,68 +8881,75 @@ leaveButton.addEventListener(
             );
 
             return;
-
         }
 
 
         /*
-         * DELETE participant record from Supabase.
+         * SECURITY BOUNDARY
+         *
+         * The participant browser no longer directly changes
+         * its conference_participants status.
+         *
+         * The private credential authorizes only this
+         * participant's permitted transition to LEFT.
          */
-const {
-    data,
-    error
-} =
-await supabaseClient
-    .from(
-        "conference_participants"
-    )
-    .update({
-        status: "left",
-        updated_at:
-            new Date().toISOString()
-    })
-    .eq(
-        "id",
-        participantId
-    )
-    .select()
-    .single();
 
-        /*
-         * Check for database error.
-         */
+        const {
+            error
+        } =
+        await supabaseClient.rpc(
+            "leave_conference_participant",
+            {
+                requested_participant_id:
+                    participantId,
+
+                supplied_credential:
+                    participantCredential
+            }
+        );
+
+
         if(error){
 
             console.error(
-                "LEAVE DELETE ERROR:",
+                "SECURE PARTICIPANT LEAVE ERROR:",
                 error
             );
 
             showCustomAlert(
-                CUSTOM_ALERT_MESSAGES.leaveError(error)
+                CUSTOM_ALERT_MESSAGES.leaveError(
+                    error
+                )
             );
 
             return;
-
         }
 
 
         console.log(
-    "LEAVE DELETE SUCCESS:",
-    participantId
-);
+            "SECURE PARTICIPANT LEAVE SUCCESS:",
+            participantId
+        );
 
 
         /*
-         * Clear our stored participant ID.
+         * The authoritative database transition succeeded.
+         *
+         * Clear the private browser-side participant
+         * authorization before leaving this session.
          */
+
         window.myParticipantId =
+            null;
+
+        participantCredential =
             null;
 
 
         /*
          * Stop local camera/microphone.
          */
+
         if(localStream){
 
             localStream
@@ -8631,6 +8968,7 @@ await supabaseClient
          * Stop administrator video
          * if it exists on this browser.
          */
+
         if(adminVideo.srcObject){
 
             adminVideo.srcObject
@@ -8648,6 +8986,7 @@ await supabaseClient
         /*
          * Reload the participant page.
          */
+
         window.location.reload();
 
     }
@@ -9494,219 +9833,279 @@ micButtonParticipant.addEventListener(
             return;
         }
 
-        if(!localStream){
+
+        if(
+            !localStream ||
+            !window.myParticipantId ||
+            !participantCredential
+        ){
+
+            console.error(
+                "PARTICIPANT MIC ERROR: Secure participant session is unavailable."
+            );
+
+            showCustomAlert(
+                CUSTOM_ALERT_MESSAGES.sessionNotFound
+            );
+
             return;
         }
 
+
         const tracks =
             localStream.getAudioTracks();
+
 
         if(!tracks.length){
             return;
         }
 
-        tracks.forEach(
-            track => {
-                track.enabled =
-                    !track.enabled;
+
+        /*
+         * Determine the requested state WITHOUT changing
+         * the local microphone yet.
+         *
+         * The database must authorize the change first.
+         */
+
+        const requestedMicOn =
+            !tracks[0].enabled;
+
+
+        const {
+            error
+        } =
+        await supabaseClient.rpc(
+            "set_conference_participant_microphone",
+            {
+                requested_participant_id:
+                    window.myParticipantId,
+
+                supplied_credential:
+                    participantCredential,
+
+                requested_mic_on:
+                    requestedMicOn
             }
         );
 
-        const enabled =
-            tracks[0].enabled;
 
-        micButtonParticipant.textContent =
-            enabled
-            ? "🎤 Mic ON"
-            : "🔇 Mic OFF";
+        if(error){
 
-        micButtonParticipant.classList.toggle(
-            "active",
-            enabled
-        );
+            console.error(
+                "SECURE PARTICIPANT MIC ERROR:",
+                error
+            );
+
+            /*
+             * If an administrator locked the microphone
+             * before this request reached the database,
+             * the authoritative RPC rejects the ON request.
+             *
+             * Do not change the local audio track.
+             */
+
+            return;
+        }
 
 
         /*
-         * Save microphone state to Supabase
-         * so the administrator sees the
-         * correct status.
+         * The credential-protected database operation
+         * succeeded.
+         *
+         * Only now apply the authorized state locally.
          */
-        if(window.myParticipantId){
 
-            const {
-                error
-            } =
-            await supabaseClient
-                .from(
-                    "conference_participants"
-                )
-                .update({
-                    mic_on:
-                        enabled,
-                    updated_at:
-                        new Date().toISOString()
-                })
-                .eq(
-                    "id",
-                    window.myParticipantId
-                );
+        tracks.forEach(
+            track => {
 
-            if(error){
-
-                console.error(
-                    "MIC STATUS UPDATE ERROR:",
-                    error
-                );
+                track.enabled =
+                    requestedMicOn;
 
             }
+        );
 
-        }
+
+        micButtonParticipant.textContent =
+            requestedMicOn
+            ? "🎤 Mic ON"
+            : "🔇 Mic OFF";
+
+
+        micButtonParticipant.classList.toggle(
+            "active",
+            requestedMicOn
+        );
+
+
+        console.log(
+            "Secure participant microphone change:",
+            requestedMicOn
+        );
 
     }
 );
+
 
 cameraButtonParticipant.addEventListener(
     "click",
     async function(){
 
+        /*
+         * Mirror mode has no participant camera-control
+         * authority.
+         *
+         * The mirror is a receive-only display opened by an
+         * authorized administrator for participant screen
+         * sharing. Its participant controls are hidden.
+         *
+         * Fail closed if this handler is ever invoked from
+         * mirror mode rather than allowing the mirror URL to
+         * mutate a participant record.
+         */
+
         if(isMirror){
 
-            mirrorCameraOn =
-                !mirrorCameraOn;
-
-            await sendWebRTCSignal({
-
-                type:
-                    "participant-media-control",
-
-                senderId:
-                    "mirror-" +
-                    mirrorParticipantId,
-
-                targetId:
-                    mirrorParticipantId,
-
-                participantId:
-                    mirrorParticipantId,
-
-                media:
-                    "camera",
-
-                enabled:
-                    mirrorCameraOn
-
-            });
-
-            cameraButtonParticipant.textContent =
-                mirrorCameraOn
-                ? "📹 Camera ON"
-                : "📹 Camera OFF";
-
-            cameraButtonParticipant.classList.toggle(
-                "active",
-                mirrorCameraOn
+            console.warn(
+                "Mirror camera control ignored."
             );
 
-            await supabaseClient
-                .from("conference_participants")
-                .update({
-                    camera_on:
-                        mirrorCameraOn,
-
-                    updated_at:
-                        new Date().toISOString()
-                })
-                .eq(
-                    "id",
-                    mirrorParticipantId
-                );
-
             return;
+
         }
 
 
-        if(!localStream){
+        if(
+            !localStream ||
+            !window.myParticipantId ||
+            !participantCredential
+        ){
+
+            console.error(
+                "PARTICIPANT CAMERA ERROR: Secure participant session is unavailable."
+            );
+
+            showCustomAlert(
+                CUSTOM_ALERT_MESSAGES.sessionNotFound
+            );
+
             return;
+
         }
+
 
         const tracks =
             localStream.getVideoTracks();
 
+
         if(!tracks.length){
+
             return;
+
         }
-
-        tracks.forEach(
-            track => {
-                track.enabled =
-                    !track.enabled;
-            }
-        );
-
-        const enabled =
-            tracks[0].enabled;
-
-        participantLocalVideo.style.display =
-            enabled
-            ? "block"
-            : "none";
-
-        participantVideoPlaceholder.style.display =
-            enabled
-            ? "none"
-            : "flex";
-
-        cameraButtonParticipant.textContent =
-            enabled
-            ? "📹 Camera ON"
-            : "📹 Camera OFF";
-
-        cameraButtonParticipant.classList.toggle(
-            "active",
-            enabled
-        );
 
 
         /*
-         * Save camera state to Supabase
-         * so the administrator sees the
-         * correct status.
+         * Determine the requested state WITHOUT changing
+         * the local camera yet.
+         *
+         * The credential-protected RPC must authorize the
+         * state change first.
          */
-        if(window.myParticipantId){
 
-            const {
-                error
-            } =
-            await supabaseClient
-                .from(
-                    "conference_participants"
-                )
-                .update({
-                    camera_on:
-                        enabled,
-                    updated_at:
-                        new Date().toISOString()
-                })
-                .eq(
-                    "id",
-                    window.myParticipantId
-                );
+        const requestedCameraOn =
+            !tracks[0].enabled;
 
-            if(error){
 
-                console.error(
-                    "CAMERA STATUS UPDATE ERROR:",
-                    error
-                );
+        const {
+            error
+        } =
+        await supabaseClient.rpc(
+            "set_conference_participant_camera",
+            {
+                requested_participant_id:
+                    window.myParticipantId,
 
+                supplied_credential:
+                    participantCredential,
+
+                requested_camera_on:
+                    requestedCameraOn
             }
+        );
+
+
+        if(error){
+
+            console.error(
+                "SECURE PARTICIPANT CAMERA ERROR:",
+                error
+            );
+
+            return;
 
         }
+
+
+        /*
+         * The credential-protected database operation
+         * succeeded.
+         *
+         * Only now apply the authorized state locally.
+         */
+
+        tracks.forEach(
+            track => {
+
+                track.enabled =
+                    requestedCameraOn;
+
+            }
+        );
+
+
+        participantLocalVideo.style.display =
+            requestedCameraOn
+            ? "block"
+            : "none";
+
+
+        participantVideoPlaceholder.style.display =
+            requestedCameraOn
+            ? "none"
+            : "flex";
+
+
+        cameraButtonParticipant.textContent =
+            requestedCameraOn
+            ? "📹 Camera ON"
+            : "📹 Camera OFF";
+
+
+        cameraButtonParticipant.classList.toggle(
+            "active",
+            requestedCameraOn
+        );
+
+
+        console.log(
+            "Secure participant camera change:",
+            requestedCameraOn
+        );
 
     }
 );
 
-leaveButtonParticipant.addEventListener("click", function(){ leaveButton.click(); });
+
+leaveButtonParticipant.addEventListener(
+    "click",
+    function(){
+
+        leaveButton.click();
+
+    }
+);
+
 
 /* =========================================================
    ESCAPE HTML
@@ -9925,21 +10324,617 @@ if(participants.length){
 }
 
 /* =========================================================
+   ADMINISTRATOR AUTHORIZATION
+========================================================= */
+
+/*
+ * A request for administrator mode is not authority.
+ *
+ * Administrator authority requires BOTH:
+ *
+ * 1. A valid Supabase Auth session.
+ * 2. Authorization for the organization that owns ROOM_ID.
+ *
+ * Row Level Security on conference_rooms and
+ * conference_organizations enforces the organization boundary.
+ *
+ * Failure at any point leaves isAdministrator false.
+ */
+async function authorizeAdministratorAccess(){
+
+    isAdministrator =
+        false;
+
+    if(!administratorAccessRequested){
+        return false;
+    }
+
+
+    const {
+        data: sessionData,
+        error: sessionError
+    } =
+    await supabaseClient.auth.getSession();
+
+
+    if(sessionError){
+
+        console.error(
+            "ADMIN SESSION ERROR:",
+            sessionError
+        );
+
+        return false;
+    }
+
+
+    const session =
+        sessionData?.session;
+
+
+    if(!session?.user){
+
+        console.log(
+            "Administrator access requested, but no authenticated Supabase session exists."
+        );
+
+        return false;
+    }
+
+
+    const {
+        data: room,
+        error: roomError
+    } =
+    await supabaseClient
+        .from("conference_rooms")
+        .select(
+            "id, organization_id, room_code"
+        )
+        .eq(
+            "room_code",
+            ROOM_ID
+        )
+        .maybeSingle();
+
+
+    if(roomError){
+
+        console.error(
+            "ADMIN ROOM AUTHORIZATION ERROR:",
+            roomError
+        );
+
+        return false;
+    }
+
+
+    if(!room){
+
+        console.warn(
+            "Administrator access denied for conference room:",
+            ROOM_ID
+        );
+
+        return false;
+    }
+
+
+    const {
+        data: organization,
+        error: organizationError
+    } =
+    await supabaseClient
+        .from("conference_organizations")
+        .select(
+            "id"
+        )
+        .eq(
+            "id",
+            room.organization_id
+        )
+        .maybeSingle();
+
+
+    if(organizationError){
+
+        console.error(
+            "ADMIN ORGANIZATION AUTHORIZATION ERROR:",
+            organizationError
+        );
+
+        return false;
+    }
+
+
+    if(!organization){
+
+        console.warn(
+            "Administrator is not authorized for conference room:",
+            ROOM_ID
+        );
+
+        return false;
+    }
+
+
+    isAdministrator =
+        true;
+
+
+    console.log(
+        "Administrator authorization confirmed for room:",
+        ROOM_ID
+    );
+
+
+    return true;
+}
+
+
+/* =========================================================
+   ADMINISTRATOR SIGN IN
+========================================================= */
+
+function showAdministratorSignIn(){
+
+    return new Promise(
+        resolve => {
+
+            const overlay =
+                document.createElement(
+                    "div"
+                );
+
+            overlay.style.position =
+                "fixed";
+
+            overlay.style.inset =
+                "0";
+
+            overlay.style.zIndex =
+                "10000";
+
+            overlay.style.display =
+                "flex";
+
+            overlay.style.alignItems =
+                "center";
+
+            overlay.style.justifyContent =
+                "center";
+
+            overlay.style.padding =
+                "20px";
+
+            overlay.style.background =
+                "rgba(0,0,0,.94)";
+
+
+            const box =
+                document.createElement(
+                    "div"
+                );
+
+            box.style.width =
+                "100%";
+
+            box.style.maxWidth =
+                "420px";
+
+            box.style.padding =
+                "30px";
+
+            box.style.borderRadius =
+                "10px";
+
+            box.style.background =
+                "#fff";
+
+            box.style.color =
+                "#111";
+
+            box.style.textAlign =
+                "center";
+
+
+            box.innerHTML = `
+                <img
+                    src="safe-insight-logo.png"
+                    alt="Safe Insight"
+                    style="
+                        width:250px;
+                        max-width:80%;
+                        margin-bottom:20px;
+                    "
+                >
+
+                <h1
+                    style="
+                        margin:5px 0 10px;
+                        font-size:24px;
+                    "
+                >
+                    Administrator Sign In
+                </h1>
+
+                <p
+                    style="
+                        color:#555;
+                        line-height:1.4;
+                    "
+                >
+                    Sign in to administer conference room
+                    <strong>${escapeHtml(ROOM_ID)}</strong>.
+                </p>
+
+                <input
+                    id="conferenceAdminEmail"
+                    type="email"
+                    autocomplete="username"
+                    placeholder="Email"
+                    style="
+                        width:100%;
+                        padding:13px;
+                        border:1px solid #bbb;
+                        border-radius:5px;
+                        font-size:16px;
+                        margin:10px 0 5px;
+                    "
+                >
+
+                <input
+                    id="conferenceAdminPassword"
+                    type="password"
+                    autocomplete="current-password"
+                    placeholder="Password"
+                    style="
+                        width:100%;
+                        padding:13px;
+                        border:1px solid #bbb;
+                        border-radius:5px;
+                        font-size:16px;
+                        margin:5px 0 15px;
+                    "
+                >
+
+                <div
+                    id="conferenceAdminLoginError"
+                    style="
+                        display:none;
+                        margin:0 0 15px;
+                        color:#b00000;
+                        font-weight:bold;
+                    "
+                ></div>
+
+                <button
+                    id="conferenceAdminLoginButton"
+                    type="button"
+                    style="
+                        width:100%;
+                        padding:14px;
+                        border:0;
+                        border-radius:5px;
+                        background:#d71920;
+                        color:#fff;
+                        font-size:17px;
+                        font-weight:bold;
+                        cursor:pointer;
+                    "
+                >
+                    Sign In
+                </button>
+            `;
+
+
+            overlay.appendChild(
+                box
+            );
+
+            document.body.appendChild(
+                overlay
+            );
+
+
+            const emailInput =
+                box.querySelector(
+                    "#conferenceAdminEmail"
+                );
+
+            const passwordInput =
+                box.querySelector(
+                    "#conferenceAdminPassword"
+                );
+
+            const loginButton =
+                box.querySelector(
+                    "#conferenceAdminLoginButton"
+                );
+
+            const loginError =
+                box.querySelector(
+                    "#conferenceAdminLoginError"
+                );
+
+
+            async function submitAdministratorLogin(){
+
+                const email =
+                    emailInput.value.trim();
+
+                const password =
+                    passwordInput.value;
+
+
+                loginError.style.display =
+                    "none";
+
+                loginError.textContent =
+                    "";
+
+
+                if(
+                    !email ||
+                    !password
+                ){
+
+                    loginError.textContent =
+                        "Enter your email and password.";
+
+                    loginError.style.display =
+                        "block";
+
+                    return;
+                }
+
+
+                loginButton.disabled =
+                    true;
+
+                loginButton.textContent =
+                    "Signing In...";
+
+
+                const {
+                    error
+                } =
+                await supabaseClient.auth.signInWithPassword({
+                    email,
+                    password
+                });
+
+
+                if(error){
+
+                    console.error(
+                        "ADMIN SIGN IN ERROR:",
+                        error
+                    );
+
+                    loginError.textContent =
+                        "Unable to sign in. Check your email and password.";
+
+                    loginError.style.display =
+                        "block";
+
+                    loginButton.disabled =
+                        false;
+
+                    loginButton.textContent =
+                        "Sign In";
+
+                    passwordInput.value =
+                        "";
+
+                    passwordInput.focus();
+
+                    return;
+                }
+
+
+                /*
+                 * Authentication succeeded.
+                 *
+                 * This still does NOT grant administrator authority.
+                 * The normal authorization function must prove access
+                 * to the requested conference room.
+                 */
+                const authorized =
+                    await authorizeAdministratorAccess();
+
+
+                if(!authorized){
+
+                    await supabaseClient.auth.signOut();
+
+                    loginError.textContent =
+                        "Access denied. This account is not authorized to administer this conference room.";
+
+                    loginError.style.display =
+                        "block";
+
+                    loginButton.disabled =
+                        false;
+
+                    loginButton.textContent =
+                        "Sign In";
+
+                    passwordInput.value =
+                        "";
+
+                    return;
+                }
+
+
+                overlay.remove();
+
+                resolve(
+                    true
+                );
+
+            }
+
+
+            loginButton.addEventListener(
+                "click",
+                submitAdministratorLogin
+            );
+
+
+            passwordInput.addEventListener(
+                "keydown",
+                function(event){
+
+                    if(
+                        event.key ===
+                        "Enter"
+                    ){
+
+                        submitAdministratorLogin();
+
+                    }
+
+                }
+            );
+
+
+            emailInput.focus();
+
+        }
+    );
+
+}
+
+
+/* =========================================================
    START APPLICATION
 ========================================================= */
 
-initializeChat();
-initializeWebRTCSignaling();
-initializeApplication();
+async function startApplication(){
+
+    /*
+     * Ordinary participant access does not require
+     * administrator authentication.
+     */
+    if(administratorAccessRequested){
+
+        /*
+         * First determine whether this browser already has
+         * an authenticated Supabase session.
+         *
+         * Authentication and authorization are deliberately
+         * treated as separate facts.
+         */
+        const {
+            data: sessionData,
+            error: sessionError
+        } =
+        await supabaseClient.auth.getSession();
 
 
-if(isAdministrator){
+        if(sessionError){
 
-    loadConferenceParticipants();
+            console.error(
+                "ADMIN STARTUP SESSION ERROR:",
+                sessionError
+            );
 
-    subscribeToConference();
+            showCustomAlert(
+                "Administrator sign-in could not be verified. Please refresh the page and try again."
+            );
+
+            return;
+        }
+
+
+        const existingSession =
+            sessionData?.session;
+
+
+        /*
+         * No authenticated session:
+         * show the administrator sign-in screen.
+         *
+         * The sign-in function will still run the normal
+         * room authorization check after authentication.
+         */
+        if(!existingSession?.user){
+
+            const authorized =
+                await showAdministratorSignIn();
+
+
+            if(!authorized){
+
+                return;
+
+            }
+
+        }else{
+
+            /*
+             * An authenticated session already exists.
+             *
+             * Now determine whether that authenticated user
+             * is actually authorized for this conference room.
+             */
+            const authorized =
+                await authorizeAdministratorAccess();
+
+
+            if(!authorized){
+
+                console.warn(
+                    "Authenticated user denied administrator access to room:",
+                    ROOM_ID
+                );
+
+
+                /*
+                 * End the unauthorized session so another
+                 * administrator can sign in cleanly.
+                 */
+                await supabaseClient.auth.signOut();
+
+
+                showCustomAlert(
+                    "Access Denied.\n\nThis account is not authorized to administer this conference room."
+                );
+
+
+                return;
+
+            }
+
+        }
+
+    }
+
+
+    initializeChat();
+
+    initializeWebRTCSignaling();
+
+    initializeApplication();
+
+
+    /*
+     * Administrator-only room monitoring starts only after
+     * authorization has succeeded.
+     */
+    if(isAdministrator){
+
+        await loadConferenceParticipants();
+
+        subscribeToConference();
+
+    }
 
 }
+
+
+startApplication();
 
 </script>
 
