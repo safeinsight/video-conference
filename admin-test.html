@@ -7416,27 +7416,34 @@ async function denyParticipant(id){
     );
 
 
+    /*
+       SECURITY BOUNDARY
+
+       Administrator denial must not directly update
+       conference_participants.
+
+       The authenticated administrator requests denial
+       through the secure database RPC. The RPC establishes
+       whether the signed-in user administers the organization
+       that owns this participant's conference room and permits
+       only the waiting -> denied transition.
+    */
+
     const {
         data,
         error
     } =
-    await supabaseClient
-        .from("conference_participants")
-        .update({
+    await supabaseClient.rpc(
+        "deny_conference_participant",
+        {
+            requested_participant_id: id
+        }
+    );
 
-            status: "denied",
 
-            updated_at:
-                new Date().toISOString()
-
-        })
-        .eq(
-            "id",
-            id
-        )
-        .select()
-        .single();
-
+    /*
+       Check for authorization/database error.
+    */
 
     if(error){
 
@@ -7450,15 +7457,22 @@ async function denyParticipant(id){
         );
 
         return;
-
     }
 
 
     console.log(
-        "Participant denied in database:",
+        "Participant denied through secure RPC:",
         data
     );
 
+
+    /*
+       Remove participant from the administrator's
+       local waiting-room display.
+
+       The secure RPC has already established the
+       authoritative denied state in the database.
+    */
 
     waitingParticipants =
         waitingParticipants.filter(
