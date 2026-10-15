@@ -894,29 +894,56 @@ input {
     }
 
     /*
-       Two columns on phones.
-       The administrator remains prominent.
+       MOBILE VIDEO GRID
+
+       Desktop uses a fixed 4-column x 3-row layout.
+
+       Mobile intentionally removes that fixed row structure.
+
+       Tiles remain two columns wide and every row receives
+       a useful fixed height. Additional rows extend below
+       the visible conference area and the video grid itself
+       scrolls vertically.
+
+       This prevents the first desktop-defined rows from being
+       compressed while later implicit rows remain full size.
     */
 
     #videoGrid {
 
-        grid-template-columns: repeat(2, 1fr);
+        grid-template-columns:
+            repeat(2, minmax(0, 1fr));
 
-        grid-auto-rows: minmax(130px, 1fr);
+        grid-template-rows:
+            none;
 
-        overflow-y: auto;
+        grid-auto-rows:
+            150px;
 
-        padding-bottom: 0;
+        align-content:
+            start;
+
+        overflow-x:
+            hidden;
+
+        overflow-y:
+            auto;
+
+        -webkit-overflow-scrolling:
+            touch;
+
+        padding-bottom:
+            10px;
     }
 
     /*
-       Administrator tile stays visually prominent.
+       Administrator tile stays first in the mobile
+       scrolling grid.
     */
 
     .videoTile.adminTile {
 
         order: -1;
-
     }
 
     .tileLabel {
