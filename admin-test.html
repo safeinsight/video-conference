@@ -2498,7 +2498,7 @@ console.log(
  */
 
 const CONFERENCE_BUILD =
-    "ADMIN-TEST v3.0";
+    "ADMIN-TEST v3.0b";
 
 
 console.log(
@@ -3695,7 +3695,6 @@ knockButton.addEventListener(
             );
 
             nameInput.focus();
-
             return;
         }
 
@@ -3722,7 +3721,6 @@ knockButton.addEventListener(
 
             const audioTracks =
                 localStream.getAudioTracks();
-
 
             audioTracks.forEach(
                 track => {
@@ -3842,16 +3840,14 @@ supplied_credential:
 
 
         /*
-         * Create the participant WebRTC
-         * peer connection now, while we
-         * are waiting for administrator
-         * approval.
+         * Do NOT create the WebRTC peer connection while
+         * the participant is still waiting for approval.
+         *
+         * Approval establishes conference authority.
+         * The approved-status listener will create the
+         * participant peer connection and announce that
+         * this browser is ready to receive an offer.
          */
-
-        startParticipantWebRTC(
-            data
-        );
-
 
         console.log(
             "Secure knock successful:",
@@ -4361,18 +4357,19 @@ async function startParticipantWebRTC(
 
 
     /*
-     * The participant has reached the point where an actual
-     * WebRTC connection is about to be created.
+     * The participant has now been approved.
      *
-     * Request temporary TURN credentials now.
+     * Request temporary TURN credentials only after
+     * approval so the secured Edge Function can verify:
      *
-     * The secured Edge Function will issue them only when this
-     * participant ID, private credential, room, and approved
-     * conference status are all valid.
+     * participant ID
+     * + private participant credential
+     * + room
+     * + approved conference status.
      *
-     * TURN is supplemental. If the credential request fails,
-     * retain the existing STUN configuration and allow WebRTC
-     * to attempt its normal direct connection.
+     * TURN remains supplemental. If TURN is unavailable,
+     * preserve STUN and allow WebRTC to attempt its normal
+     * direct connection.
      */
 
     const participantTurnReady =
@@ -4411,9 +4408,6 @@ async function startParticipantWebRTC(
 
             }
         );
-
-
-
 
 
     /*
@@ -4512,15 +4506,62 @@ async function startParticipantWebRTC(
 
 
     /*
-     * The participant does NOT create the
-     * initial offer.
+     * The participant does NOT create the initial offer.
      *
-     * The administrator does that after
-     * receiving the participant.
+     * More importantly, the administrator must not guess
+     * when this participant is ready to receive that offer.
+     *
+     * Wait until the participant's Supabase Realtime
+     * signaling channel has confirmed SUBSCRIBED.
      */
 
+    while(!webRTCSignalingReady){
+
+        await new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    50
+                )
+        );
+
+    }
+
+
+    /*
+     * The participant is now:
+     *
+     * 1. approved,
+     * 2. holding its WebRTC peer connection,
+     * 3. holding its local media tracks, and
+     * 4. subscribed to the signaling channel.
+     *
+     * Announce readiness to the administrator.
+     *
+     * The administrator creates/sends the offer only
+     * after receiving this signal.
+     */
+
+    await sendWebRTCSignal({
+
+        type:
+            "participant-ready",
+
+        senderId:
+            window.myParticipantId,
+
+        targetId:
+            "administrator",
+
+        participantId:
+            window.myParticipantId
+
+    });
+
+
     console.log(
-        "Participant WebRTC ready and waiting for administrator offer."
+        "PARTICIPANT WEBRTC READY SIGNAL SENT:",
+        window.myParticipantId
     );
 
 }
@@ -5899,6 +5940,43 @@ async function handleAdminWebRTCSignal(
     }
 
 
+    /*
+     * Participant readiness handshake.
+     *
+     * Approval alone no longer causes the administrator
+     * to guess when the participant can receive an offer.
+     *
+     * The participant sends this only after:
+     *
+     * - approval,
+     * - local WebRTC creation,
+     * - local media attachment, and
+     * - signaling SUBSCRIBED.
+     *
+     * That is the correct moment to create the
+     * administrator connection and send the offer.
+     */
+
+    if(
+        signal.type ===
+        "participant-ready"
+    ){
+
+        console.log(
+            "ADMIN RECEIVED PARTICIPANT READY:",
+            participantId
+        );
+
+
+        await createAdminPeerConnection(
+            participantId
+        );
+
+
+        return;
+    }
+
+
     const peerConnection =
         adminPeerConnections.get(
             participantId
@@ -5967,7 +6045,6 @@ async function handleAdminWebRTCSignal(
 
 
             return;
-
         }
 
 
@@ -5995,7 +6072,6 @@ async function handleAdminWebRTCSignal(
 
 
         return;
-
     }
 
 
@@ -6102,7 +6178,6 @@ async function handleAdminWebRTCSignal(
 
 
         return;
-
     }
 
 }
@@ -7323,6 +7398,7 @@ async function allowParticipant(id){
         participants.push(
             participant
         );
+
     }
 
 
@@ -7339,15 +7415,26 @@ async function allowParticipant(id){
 
 
     /*
-       Start the administrator's receive-only
-       WebRTC connection with this participant.
+       Approval stops here.
 
-       Administrator camera and microphone media
-       are not required to receive participant
-       video or audio.
+       The administrator does NOT immediately create
+       the WebRTC connection or send an offer.
+
+       The approved participant will create its local
+       WebRTC connection, confirm that its signaling
+       channel is subscribed, and send:
+
+           participant-ready
+
+       The administrator's WebRTC signal handler then
+       creates the receive-only connection and sends
+       the offer.
+
+       This removes the admission/signaling timing race.
     */
 
-    await createAdminPeerConnection(
+    console.log(
+        "Participant approved. Waiting for participant WebRTC readiness:",
         participant.id
     );
 
