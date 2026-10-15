@@ -2582,14 +2582,15 @@ knockButton.addEventListener(
             generateAuditorCredential();
 
         /*
-         * INTENDED BACKEND CONTRACT.
+         * AUDITOR BACKEND CONTRACT.
          *
-         * This RPC is NOT being deployed while live students are
-         * using production. The local migration remains unapplied.
+         * The database RPC establishes authority by hard-coding:
          *
-         * When deployed during a controlled maintenance window,
-         * the RPC itself must hard-code role='auditor' and
-         * status='waiting'. The browser never chooses its role.
+         *     role   = "auditor"
+         *     status = "waiting"
+         *
+         * The browser supplies the requested conference identity
+         * and media state but never chooses its own authority.
          */
         const {
             data,
@@ -2629,7 +2630,7 @@ knockButton.addEventListener(
                 "🔔 Knock to Enter";
 
             alert(
-                "The Auditor test backend is not active yet. No production Supabase change has been made."
+                "Unable to send your audit request. Please try again."
             );
 
             return;
@@ -2686,6 +2687,7 @@ knockButton.addEventListener(
         );
     }
 );
+
 
 /* =========================================================
    RESTORE APPROVED AUDITOR
