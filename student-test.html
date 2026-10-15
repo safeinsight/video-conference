@@ -2408,7 +2408,7 @@ console.log(
  */
 
 const CONFERENCE_BUILD =
-    "STUDENT-TEST v3.0";
+    "STUDENT-TEST v3.0b";
 
 
 console.log(
@@ -3314,12 +3314,19 @@ function updateAdminCameraButton(text){
    INITIALIZE
 ========================================================= */
 
-function initializeApplication(){
+async function initializeApplication(){
 
-if(isMirror && !isAdministrator){
-    initializeParticipantMirror();
-    return;
-}
+    if(
+        isMirror &&
+        !isAdministrator
+    ){
+
+        initializeParticipantMirror();
+
+        return;
+
+    }
+
 
     if(isAdministrator){
 
@@ -3327,7 +3334,13 @@ if(isMirror && !isAdministrator){
 
     }else{
 
-        initializeParticipant();
+        /*
+         * Participant initialization may now perform a secure
+         * refresh-restoration check before deciding whether
+         * the Knock screen should be displayed.
+         */
+
+        await initializeParticipant();
 
     }
 
@@ -3484,15 +3497,400 @@ function initializeParticipantMirror(){
    PARTICIPANT
 ========================================================= */
 
-function initializeParticipant(){
+/*
+ * Refresh restoration is intentionally limited to this
+ * browser tab/session.
+ *
+ * sessionStorage remembers only enough information for the
+ * browser to ask the database whether this exact participant
+ * is STILL authorized.
+ *
+ * Browser storage never establishes conference admission.
+ */
 
-    administratorView.style.display = "none";
-    participantView.style.display = "none";
-    toolbar.style.display = "none";
-    administratorToolbar.style.display = "none";
-    adminPanel.style.display = "none";
+const PARTICIPANT_SESSION_STORAGE_KEY =
+    "safeInsightConferenceParticipantSession";
 
-    joinScreen.classList.remove("hidden");
+
+function saveParticipantSession(
+    participantId,
+    credential
+){
+
+    if(
+        !participantId ||
+        !credential
+    ){
+
+        return;
+
+    }
+
+
+    sessionStorage.setItem(
+        PARTICIPANT_SESSION_STORAGE_KEY,
+        JSON.stringify({
+            roomId:
+                ROOM_ID,
+
+            participantId:
+                participantId,
+
+            credential:
+                credential
+        })
+    );
+
+}
+
+
+function clearParticipantSession(){
+
+    sessionStorage.removeItem(
+        PARTICIPANT_SESSION_STORAGE_KEY
+    );
+
+}
+
+
+function loadParticipantSession(){
+
+    const storedSession =
+        sessionStorage.getItem(
+            PARTICIPANT_SESSION_STORAGE_KEY
+        );
+
+
+    if(!storedSession){
+
+        return null;
+
+    }
+
+
+    try{
+
+        const parsedSession =
+            JSON.parse(
+                storedSession
+            );
+
+
+        if(
+            !parsedSession ||
+            parsedSession.roomId !== ROOM_ID ||
+            !parsedSession.participantId ||
+            !parsedSession.credential
+        ){
+
+            clearParticipantSession();
+
+            return null;
+
+        }
+
+
+        return parsedSession;
+
+    }catch(error){
+
+        console.warn(
+            "Stored participant session could not be read:",
+            error
+        );
+
+
+        clearParticipantSession();
+
+        return null;
+
+    }
+
+}
+
+
+async function restoreParticipantSession(){
+
+    const storedSession =
+        loadParticipantSession();
+
+
+    if(!storedSession){
+
+        return false;
+
+    }
+
+
+    console.log(
+        "Checking saved participant session:",
+        storedSession.participantId
+    );
+
+
+    const {
+        data,
+        error
+    } =
+    await supabaseClient.rpc(
+        "restore_conference_participant_session",
+        {
+            requested_room_id:
+                ROOM_ID,
+
+            requested_participant_id:
+                storedSession.participantId,
+
+            supplied_credential:
+                storedSession.credential
+        }
+    );
+
+
+    /*
+     * PostgreSQL returns a composite record containing null
+     * fields when this RPC returns NULL.
+     *
+     * Therefore the JavaScript object itself must NOT be used
+     * as proof of successful restoration.
+     *
+     * A real participant ID and authoritative APPROVED status
+     * are both required.
+     */
+
+    if(
+        error ||
+        !data?.id ||
+        data.status !== "approved" ||
+        data.room_id !== ROOM_ID
+    ){
+
+        console.log(
+            "Saved participant session is no longer restorable.",
+            {
+                data:
+                    data,
+
+                error:
+                    error
+            }
+        );
+
+
+        clearParticipantSession();
+
+        return false;
+
+    }
+
+
+    /*
+     * The database has now independently confirmed:
+     *
+     *     participant ID
+     *     + private credential
+     *     + requested room
+     *     + current APPROVED status
+     *
+     * Only now restore the browser-side participant identity.
+     */
+
+    window.myParticipantId =
+        data.id;
+
+    participantCredential =
+        storedSession.credential;
+
+
+    /*
+     * Reacquire local camera and microphone.
+     *
+     * The authoritative database media state is then applied
+     * to the newly acquired tracks so refresh does not silently
+     * change the participant's existing camera/microphone state.
+     */
+
+    try{
+
+        localStream =
+            await navigator.mediaDevices.getUserMedia({
+                video:
+                    true,
+
+                audio:
+                    true
+            });
+
+
+        const videoTracks =
+            localStream.getVideoTracks();
+
+        const audioTracks =
+            localStream.getAudioTracks();
+
+
+        videoTracks.forEach(
+            track => {
+
+                track.enabled =
+                    data.camera_on !== false;
+
+            }
+        );
+
+
+        audioTracks.forEach(
+            track => {
+
+                track.enabled =
+                    data.mic_on === true &&
+                    data.mic_locked !== true;
+
+            }
+        );
+
+
+        cameraButtonParticipant.textContent =
+            data.camera_on !== false
+            ? "📹 Camera ON"
+            : "📹 Camera OFF";
+
+
+        cameraButtonParticipant.classList.toggle(
+            "active",
+            data.camera_on !== false
+        );
+
+
+        micButtonParticipant.textContent =
+            (
+                data.mic_on === true &&
+                data.mic_locked !== true
+            )
+            ? "🎤 Mic ON"
+            : "🔇 Mic OFF";
+
+
+        micButtonParticipant.classList.toggle(
+            "active",
+            data.mic_on === true &&
+            data.mic_locked !== true
+        );
+
+    }catch(error){
+
+        console.log(
+            "Camera/microphone restoration permission:",
+            error
+        );
+
+    }
+
+
+    /*
+     * Re-establish participant status monitoring before
+     * rebuilding the conference interface.
+     */
+
+    subscribeToMyParticipant(
+        data.id
+    );
+
+
+    /*
+     * Re-enter the existing conference locally.
+     *
+     * This does NOT approve the participant. The database
+     * already established that the participant remains
+     * approved before execution reached this point.
+     */
+
+    joinScreen.classList.add(
+        "hidden"
+    );
+
+    waitingScreen.style.display =
+        "none";
+
+
+    enterConference(
+        data
+    );
+
+
+    /*
+     * Rebuild WebRTC using the existing deterministic
+     * participant-ready handshake.
+     *
+     * startParticipantWebRTC waits for the signaling channel
+     * to be subscribed before announcing participant-ready.
+     */
+
+    await startParticipantWebRTC(
+        data
+    );
+
+
+    console.log(
+        "Participant session restored after refresh:",
+        data.id
+    );
+
+
+    return true;
+
+}
+
+
+async function initializeParticipant(){
+
+    administratorView.style.display =
+        "none";
+
+    participantView.style.display =
+        "none";
+
+    toolbar.style.display =
+        "none";
+
+    administratorToolbar.style.display =
+        "none";
+
+    adminPanel.style.display =
+        "none";
+
+
+    /*
+     * Do not briefly expose the normal Knock screen while an
+     * existing participant session is being validated.
+     */
+
+    joinScreen.classList.add(
+        "hidden"
+    );
+
+
+    const restored =
+        await restoreParticipantSession();
+
+
+    if(restored){
+
+        return;
+
+    }
+
+
+    /*
+     * No valid approved session exists.
+     *
+     * The normal conference admission workflow remains exactly
+     * where it was: show the Knock screen and require entry.
+     */
+
+    joinScreen.classList.remove(
+        "hidden"
+    );
 
 }
 
@@ -3667,6 +4065,20 @@ knockButton.addEventListener(
             data.id;
 
 
+        /*
+         * Preserve this newly established participant identity
+         * for REFRESH recovery within this browser tab/session.
+         *
+         * This does not preserve admission authority.
+         * Restoration must still be approved by the database.
+         */
+
+        saveParticipantSession(
+            data.id,
+            newParticipantCredential
+        );
+
+
         console.log(
             "Secure knock successful:",
             data
@@ -3764,32 +4176,38 @@ function subscribeToMyParticipant(participantId){
                     const participant =
                         payload.new;
 
-if(
-    participant.status ===
-    "approved" &&
-    participantView.style.display !== "flex"
-){
 
-    console.log(
-        "ENTRY APPROVED"
-    );
+                    if(
+                        participant.status ===
+                        "approved" &&
+                        participantView.style.display !== "flex"
+                    ){
 
-    enterConference(
-        participant
-    );
+                        console.log(
+                            "ENTRY APPROVED"
+                        );
 
-    /*
-     * Start the actual WebRTC
-     * connection here.
-     *
-     * We will add the WebRTC
-     * function next.
-     */
-    startParticipantWebRTC(
-        participant
-    );
+                        enterConference(
+                            participant
+                        );
 
-}
+
+                        /*
+                         * Administrator approval establishes
+                         * permission.
+                         *
+                         * The participant now starts WebRTC
+                         * and announces participant-ready only
+                         * after signaling is ready.
+                         */
+
+                        startParticipantWebRTC(
+                            participant
+                        );
+
+                    }
+
+
                     if(
                         participant.status ===
                         "denied"
@@ -3799,9 +4217,25 @@ if(
                             "ENTRY DENIED"
                         );
 
+
+                        /*
+                         * Denial is terminal for this participant
+                         * identity. Do not preserve it for refresh.
+                         */
+
+                        clearParticipantSession();
+
+                        window.myParticipantId =
+                            null;
+
+                        participantCredential =
+                            null;
+
+
                         showDeniedScreen();
 
                     }
+
 
                     if(
                         participant.status ===
@@ -3812,7 +4246,39 @@ if(
                             "REMOVED BY ADMINISTRATOR"
                         );
 
+
+                        /*
+                         * Removal is terminal for this participant
+                         * identity. Do not preserve it for refresh.
+                         */
+
+                        clearParticipantSession();
+
+                        window.myParticipantId =
+                            null;
+
+                        participantCredential =
+                            null;
+
+
                         showRemovedScreen();
+
+                    }
+
+
+                    if(
+                        participant.status ===
+                        "left"
+                    ){
+
+                        /*
+                         * LEFT is also terminal. This normally
+                         * follows the explicit Leave workflow,
+                         * but fail closed if it arrives through
+                         * Realtime for any reason.
+                         */
+
+                        clearParticipantSession();
 
                     }
 
@@ -3828,6 +4294,7 @@ if(
 
                 }
             );
+
 
     window.participantChannel =
         channel;
@@ -9203,9 +9670,12 @@ leaveButton.addEventListener(
         /*
          * The authoritative database transition succeeded.
          *
-         * Clear the private browser-side participant
-         * authorization before leaving this session.
+         * This participant identity must no longer survive
+         * refresh in this browser session.
          */
+
+        clearParticipantSession();
+
 
         window.myParticipantId =
             null;
@@ -9253,6 +9723,9 @@ leaveButton.addEventListener(
 
         /*
          * Reload the participant page.
+         *
+         * Because sessionStorage was deliberately cleared,
+         * this reload returns to the normal Knock workflow.
          */
 
         window.location.reload();
@@ -11184,7 +11657,7 @@ async function startApplication(){
 
     initializeWebRTCSignaling();
 
-    initializeApplication();
+    await initializeApplication();
 
 
     /*
