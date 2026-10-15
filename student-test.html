@@ -458,8 +458,7 @@ input {
 
 .joinBox {
 
-    width: 100%;
-    max-width: 420px;
+    width: min(92vw, 760px);
 
     background: #fff;
 
@@ -467,7 +466,7 @@ input {
 
     border-radius: 10px;
 
-    padding: 30px;
+    padding: 46px 50px 36px;
 
     text-align: center;
 
@@ -476,17 +475,40 @@ input {
 
 .joinLogo {
 
-    width: 250px;
+    width: 430px;
     max-width: 80%;
 
-    margin-bottom: 20px;
+    margin-bottom: 28px;
 }
 
 .joinBox h1 {
 
-    margin: 5px 0 10px;
+    margin: 5px 0 22px;
 
-    font-size: 24px;
+    font-size: 42px;
+}
+
+.joinSafetyWarning {
+
+    display: inline-block;
+
+    margin: 0 0 24px;
+
+    padding: 10px 18px;
+
+    border: 2px solid #ed1c24;
+
+    border-radius: 8px;
+
+    color: #ed1c24;
+
+    background: #fff;
+
+    font-size: 20px;
+
+    font-weight: 800;
+
+    letter-spacing: .2px;
 }
 
 .joinBox p {
@@ -494,38 +516,42 @@ input {
     color: #555;
 
     line-height: 1.4;
+
+    font-size: 22px;
+
+    margin: 0 0 20px;
 }
 
 #nameInput {
 
     width: 100%;
 
-    padding: 13px;
+    padding: 18px 20px;
 
     border: 1px solid #bbb;
 
-    border-radius: 5px;
+    border-radius: 8px;
 
-    font-size: 16px;
+    font-size: 21px;
 
-    margin: 15px 0;
+    margin: 12px 0 22px;
 }
 
 #knockButton {
 
     width: 100%;
 
-    padding: 14px;
+    padding: 19px;
 
     border: none;
 
-    border-radius: 5px;
+    border-radius: 8px;
 
     background: #d71920;
 
     color: #fff;
 
-    font-size: 17px;
+    font-size: 21px;
 
     font-weight: bold;
 
@@ -2181,6 +2207,10 @@ body.mirrorMode #app {
         <h1>
             CCW Conference
         </h1>
+
+        <div class="joinSafetyWarning">
+            NO DRIVING ALLOWED WHILE ON VIDEO
+        </div>
 
         <p>
             Please Enter Your FULL NAME <br> Then Knock To Join Room
