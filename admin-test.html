@@ -4139,12 +4139,492 @@ async function sendWebRTCSignal(
    WEBRTC SIGNALING CHANNEL
 ========================================================= */
 
+/*
+ * Administrator-as-media-source connections.
+ *
+ * These are completely separate from adminPeerConnections.
+ *
+ * adminPeerConnections:
+ *     Administrator RECEIVES another participant's media.
+ *
+ * administratorSourcePeerConnections:
+ *     An approved Auditor RECEIVES this Administrator's media.
+ *
+ * The Map key is the Auditor browser's unique viewerId.
+ */
+
+const administratorSourcePeerConnections =
+    new Map();
+
+const pendingAdministratorSourceIceCandidates =
+    new Map();
+
+
+async function announceAdministratorMediaReady(){
+
+    if(
+        !isAdministrator ||
+        !webRTCSignalingReady
+    ){
+        return;
+    }
+
+    await sendWebRTCSignal({
+
+        type:
+            "administrator-media-ready",
+
+        senderId:
+            administratorViewerId,
+
+        targetId:
+            "auditor",
+
+        sourceId:
+            administratorViewerId,
+
+        sourceName:
+            "Conference Administrator",
+
+        sourceRole:
+            "administrator"
+    });
+
+    console.log(
+        "ADMINISTRATOR MEDIA SOURCE READY:",
+        administratorViewerId
+    );
+}
+
+
+function releaseAdministratorSourcePeerConnection(
+    viewerId
+){
+
+    const peerConnection =
+        administratorSourcePeerConnections.get(
+            viewerId
+        );
+
+    if(peerConnection){
+
+        peerConnection.onicecandidate =
+            null;
+
+        peerConnection.onconnectionstatechange =
+            null;
+
+        peerConnection.close();
+
+        administratorSourcePeerConnections.delete(
+            viewerId
+        );
+    }
+
+    pendingAdministratorSourceIceCandidates.delete(
+        viewerId
+    );
+}
+
+
+async function createAdministratorSourcePeerConnection(
+    viewerId
+){
+
+    if(!viewerId){
+
+        return null;
+    }
+
+
+    const existingPeerConnection =
+        administratorSourcePeerConnections.get(
+            viewerId
+        );
+
+    if(existingPeerConnection){
+
+        releaseAdministratorSourcePeerConnection(
+            viewerId
+        );
+    }
+
+
+    const administratorTurnReady =
+        await ensureTurnCredentials();
+
+    if(!administratorTurnReady){
+
+        console.warn(
+            "Administrator TURN fallback unavailable for Auditor viewer. Continuing with STUN:",
+            viewerId
+        );
+    }
+
+
+    const peerConnection =
+        new RTCPeerConnection(
+            rtcConfiguration
+        );
+
+
+    administratorSourcePeerConnections.set(
+        viewerId,
+        peerConnection
+    );
+
+
+    /*
+     * Establish permanent outgoing video and audio transceivers.
+     *
+     * The actual Administrator camera and microphone tracks may
+     * be absent when this connection is created. Keeping these
+     * negotiated sender slots allows the existing Admin controls
+     * to later attach or remove tracks without changing the
+     * Auditor's authority or creating a second media connection.
+     */
+
+    const videoTransceiver =
+        peerConnection.addTransceiver(
+            "video",
+            {
+                direction:
+                    "sendonly"
+            }
+        );
+
+    const audioTransceiver =
+        peerConnection.addTransceiver(
+            "audio",
+            {
+                direction:
+                    "sendonly"
+            }
+        );
+
+
+    peerConnection
+        .administratorVideoSender =
+            videoTransceiver.sender;
+
+    peerConnection
+        .administratorAudioSender =
+            audioTransceiver.sender;
+
+
+    /*
+     * If Administrator media is already active, attach it now.
+     */
+
+    const administratorVideoTrack =
+        adminVideo.srcObject
+            ?.getVideoTracks()
+            ?.[0] ||
+        null;
+
+    const administratorAudioTrack =
+        localStream
+            ?.getAudioTracks()
+            ?.[0] ||
+        null;
+
+
+    if(
+        administratorVideoTrack &&
+        administratorCameraOn
+    ){
+
+        await videoTransceiver.sender.replaceTrack(
+            administratorVideoTrack
+        );
+    }
+
+
+    if(
+        administratorAudioTrack &&
+        administratorMicOn
+    ){
+
+        await audioTransceiver.sender.replaceTrack(
+            administratorAudioTrack
+        );
+    }
+
+
+    peerConnection.onicecandidate =
+        async function(event){
+
+            if(!event.candidate){
+
+                return;
+            }
+
+            await sendWebRTCSignal({
+
+                type:
+                    "ice-candidate",
+
+                senderId:
+                    administratorViewerId,
+
+                targetId:
+                    viewerId,
+
+                participantId:
+                    administratorViewerId,
+
+                sourceId:
+                    administratorViewerId,
+
+                viewerId:
+                    viewerId,
+
+                candidate:
+                    event.candidate
+            });
+        };
+
+
+    peerConnection.onconnectionstatechange =
+        function(){
+
+            console.log(
+                "ADMINISTRATOR SOURCE WEBRTC STATE:",
+                viewerId,
+                peerConnection.connectionState
+            );
+
+            if(
+                [
+                    "failed",
+                    "closed"
+                ].includes(
+                    peerConnection.connectionState
+                ) &&
+                administratorSourcePeerConnections.get(
+                    viewerId
+                ) === peerConnection
+            ){
+
+                releaseAdministratorSourcePeerConnection(
+                    viewerId
+                );
+            }
+        };
+
+
+    return peerConnection;
+}
+
+
+async function handleAdministratorSourceSignal(
+    signal
+){
+
+    const viewerId =
+        signal.viewerId ||
+        signal.senderId;
+
+
+    if(!viewerId){
+
+        console.warn(
+            "Administrator source signal has no viewer ID.",
+            signal
+        );
+
+        return;
+    }
+
+
+    /*
+     * Auditor ICE may arrive before its offer has been installed.
+     */
+
+    if(
+        signal.type ===
+        "ice-candidate"
+    ){
+
+        if(!signal.candidate){
+
+            return;
+        }
+
+
+        const peerConnection =
+            administratorSourcePeerConnections.get(
+                viewerId
+            );
+
+
+        if(
+            !peerConnection ||
+            !peerConnection.remoteDescription
+        ){
+
+            let pendingCandidates =
+                pendingAdministratorSourceIceCandidates.get(
+                    viewerId
+                );
+
+            if(!pendingCandidates){
+
+                pendingCandidates =
+                    [];
+
+                pendingAdministratorSourceIceCandidates.set(
+                    viewerId,
+                    pendingCandidates
+                );
+            }
+
+
+            pendingCandidates.push(
+                signal.candidate
+            );
+
+            return;
+        }
+
+
+        try{
+
+            await peerConnection.addIceCandidate(
+                signal.candidate
+            );
+
+        }catch(error){
+
+            console.error(
+                "ADMINISTRATOR SOURCE ICE ERROR:",
+                viewerId,
+                error
+            );
+        }
+
+
+        return;
+    }
+
+
+    if(
+        signal.type !==
+        "offer" ||
+        !signal.offer
+    ){
+
+        return;
+    }
+
+
+    const peerConnection =
+        await createAdministratorSourcePeerConnection(
+            viewerId
+        );
+
+
+    if(!peerConnection){
+
+        return;
+    }
+
+
+    try{
+
+        await peerConnection.setRemoteDescription(
+            signal.offer
+        );
+
+
+        const pendingCandidates =
+            pendingAdministratorSourceIceCandidates.get(
+                viewerId
+            ) || [];
+
+
+        for(
+            const candidate
+            of pendingCandidates
+        ){
+
+            try{
+
+                await peerConnection.addIceCandidate(
+                    candidate
+                );
+
+            }catch(error){
+
+                console.error(
+                    "QUEUED ADMINISTRATOR SOURCE ICE ERROR:",
+                    viewerId,
+                    error
+                );
+            }
+        }
+
+
+        pendingAdministratorSourceIceCandidates.delete(
+            viewerId
+        );
+
+
+        const answer =
+            await peerConnection.createAnswer();
+
+
+        await peerConnection.setLocalDescription(
+            answer
+        );
+
+
+        await sendWebRTCSignal({
+
+            type:
+                "answer",
+
+            senderId:
+                administratorViewerId,
+
+            targetId:
+                viewerId,
+
+            participantId:
+                administratorViewerId,
+
+            sourceId:
+                administratorViewerId,
+
+            viewerId:
+                viewerId,
+
+            answer:
+                answer
+        });
+
+
+        console.log(
+            "Administrator media answer sent to Auditor viewer:",
+            viewerId
+        );
+
+    }catch(error){
+
+        console.error(
+            "ADMINISTRATOR SOURCE OFFER ERROR:",
+            viewerId,
+            error
+        );
+    }
+}
+
+
 function initializeWebRTCSignaling(){
 
     if(webrtcSignalingChannel){
 
         return;
-
     }
 
 
@@ -4160,7 +4640,6 @@ function initializeWebRTCSignaling(){
             "Administrator WebRTC viewer session:",
             administratorViewerId
         );
-
     }
 
 
@@ -4192,7 +4671,6 @@ function initializeWebRTCSignaling(){
                 if(!signal){
 
                     return;
-
                 }
 
 
@@ -4208,17 +4686,12 @@ function initializeWebRTCSignaling(){
                 ){
 
                     return;
-
                 }
 
 
                 /*
                  * Ignore administrator-originated WebRTC signals
                  * sent by THIS administrator browser.
-                 *
-                 * Each administrator browser has its own temporary
-                 * viewer identity, even when two devices are signed
-                 * in with the same administrator account.
                  */
 
                 if(
@@ -4228,11 +4701,10 @@ function initializeWebRTCSignaling(){
                 ){
 
                     return;
-
                 }
 
 
-    /*
+/*
  * Participant receives
  * mirror WebRTC signal.
  */
@@ -4280,7 +4752,6 @@ if(
         await startParticipantMirrorWebRTC(
             mirrorParticipantId
         );
-
     }
 
     return;
@@ -4331,23 +4802,16 @@ if(
         signal
     );
 
-            await showScreenShareRequest(
-            signal.participantId
-        );
+    await showScreenShareRequest(
+        signal.participantId
+    );
 
     return;
 }
 
+
                 /*
-                 * Participant receives
-                 * administrator signal.
-                 *
-                 * Media negotiation signals carry viewerId so the
-                 * participant can maintain an independent WebRTC
-                 * transport for every authorized viewer browser.
-                 *
-                 * Existing participant-targeted conference control
-                 * signals continue through this same route.
+                 * Participant receives administrator signal.
                  */
 
 if(
@@ -4375,12 +4839,35 @@ if(
 
 
                 /*
-                 * Administrator receives participant readiness.
+                 * Administrator acts as a media SOURCE for an
+                 * approved Auditor viewer.
                  *
-                 * participant-ready remains intentionally addressed
-                 * to the shared "administrator" audience. Every
-                 * authorized administrator browser needs to hear
-                 * that a participant transport is ready.
+                 * The Auditor's viewerId identifies only its WebRTC
+                 * transport. It grants no administrator authority.
+                 */
+
+                if(
+                    isAdministrator &&
+                    signal.targetId ===
+                    administratorViewerId &&
+                    (
+                        signal.type ===
+                            "offer" ||
+                        signal.type ===
+                            "ice-candidate"
+                    )
+                ){
+
+                    await handleAdministratorSourceSignal(
+                        signal
+                    );
+
+                    return;
+                }
+
+
+                /*
+                 * Administrator receives participant readiness.
                  */
 
                 if(
@@ -4395,18 +4882,33 @@ if(
                         signal
                     );
 
-                    return;
 
+                    /*
+                     * An Auditor announces readiness through the same
+                     * participant-ready contract so Admin can receive
+                     * the Auditor's camera/microphone.
+                     *
+                     * Reply with Administrator readiness as well.
+                     * This lets a newly admitted Auditor discover an
+                     * Administrator who was already in the room.
+                     */
+
+                    if(
+                        signal.participantRole ===
+                        "auditor"
+                    ){
+
+                        await announceAdministratorMediaReady();
+                    }
+
+
+                    return;
                 }
 
 
                 /*
                  * Administrator receives viewer-specific WebRTC
-                 * signaling.
-                 *
-                 * Answers and participant ICE candidates for one
-                 * administrator browser must never be consumed by
-                 * another administrator browser.
+                 * signaling for media Admin is receiving.
                  */
 
                 if(
@@ -4420,21 +4922,18 @@ if(
                     );
 
                     return;
-
                 }
 
             }
         )
         .subscribe(
 
-            
 function(status){
 
     console.log(
         "WebRTC signaling status:",
         status
     );
-
 
     if(status === "SUBSCRIBED"){
 
@@ -4453,6 +4952,15 @@ function(status){
                 administratorViewerId
             );
 
+
+            /*
+             * Announce this Administrator as an available media
+             * source. Approved Auditors already in the conference
+             * can independently establish their receive-only
+             * connection to this browser.
+             */
+
+            announceAdministratorMediaReady();
         }
 
     }
@@ -4461,7 +4969,7 @@ function(status){
         );
 
 }
-    
+
 /* =========================================================
    PARTICIPANT WEBRTC
 ========================================================= */
@@ -8346,6 +8854,112 @@ async function removeParticipant(id){
    ADMINISTRATOR CAMERA
 ========================================================= */
 
+/*
+ * Synchronize the Administrator's current camera track into
+ * every Auditor connection.
+ *
+ * The Administrator remains the sole authority over this
+ * camera. Auditor viewer connections merely receive whatever
+ * track the Administrator has chosen to publish.
+ */
+
+async function synchronizeAdministratorCameraToAuditors(){
+
+    const videoTrack =
+        administratorCameraOn
+            ? (
+                adminVideo.srcObject
+                    ?.getVideoTracks()
+                    ?.[0] ||
+                null
+            )
+            : null;
+
+
+    const replacements =
+        [];
+
+
+    administratorSourcePeerConnections.forEach(
+        peerConnection => {
+
+            const sender =
+                peerConnection
+                    .administratorVideoSender;
+
+            if(sender){
+
+                replacements.push(
+                    sender.replaceTrack(
+                        videoTrack
+                    )
+                );
+            }
+
+        }
+    );
+
+
+    if(replacements.length){
+
+        await Promise.allSettled(
+            replacements
+        );
+    }
+}
+
+
+/*
+ * Synchronize the Administrator's current microphone track
+ * into every Auditor connection.
+ */
+
+async function synchronizeAdministratorMicrophoneToAuditors(){
+
+    const audioTrack =
+        administratorMicOn
+            ? (
+                localStream
+                    ?.getAudioTracks()
+                    ?.[0] ||
+                null
+            )
+            : null;
+
+
+    const replacements =
+        [];
+
+
+    administratorSourcePeerConnections.forEach(
+        peerConnection => {
+
+            const sender =
+                peerConnection
+                    .administratorAudioSender;
+
+            if(sender){
+
+                replacements.push(
+                    sender.replaceTrack(
+                        audioTrack
+                    )
+                );
+            }
+
+        }
+    );
+
+
+    if(replacements.length){
+
+        await Promise.allSettled(
+            replacements
+        );
+    }
+}
+
+
 adminCameraButton.addEventListener(
     "click",
     async function(){
@@ -8374,7 +8988,16 @@ adminCameraButton.addEventListener(
                 administratorCameraOn =
                     true;
 
-                updateAdminCameraButton("Cam ON");
+                /*
+                 * Publish the newly acquired camera track to every
+                 * currently connected Auditor viewer.
+                 */
+
+                await synchronizeAdministratorCameraToAuditors();
+
+                updateAdminCameraButton(
+                    "Cam ON"
+                );
                 
                 updateAdministratorCameraStatus();
 
@@ -8391,8 +9014,19 @@ adminCameraButton.addEventListener(
         }else{
 
             /*
-               Return to logo.
-            */
+             * Remove the camera from Auditor connections BEFORE
+             * stopping the physical camera track.
+             */
+
+            administratorCameraOn =
+                false;
+
+            await synchronizeAdministratorCameraToAuditors();
+
+
+            /*
+             * Return the local Administrator tile to the logo.
+             */
 
             if(adminVideo.srcObject){
 
@@ -8415,10 +9049,9 @@ adminCameraButton.addEventListener(
                 "hidden"
             );
 
-            administratorCameraOn =
-                false;
-
-            updateAdminCameraButton("Camera OFF");
+            updateAdminCameraButton(
+                "Camera OFF"
+            );
            
             updateAdministratorCameraStatus();
 
@@ -8434,43 +9067,56 @@ adminCameraButton.addEventListener(
 
 micButton.addEventListener(
     "click",
-    function(){
+    async function(){
 
         if(!localStream){
 
             /*
-               Administrator can request microphone
-               when they first click.
-            */
+             * Administrator can request microphone
+             * when they first click.
+             */
 
-            requestAdministratorMedia();
+            await requestAdministratorMedia();
 
             return;
-
         }
+
 
         const audioTracks =
             localStream.getAudioTracks();
 
+
         if(audioTracks.length === 0){
 
             return;
-
         }
+
 
         administratorMicOn =
             !administratorMicOn;
 
-audioTracks.forEach(
-    track => {
-        track.enabled =
-            administratorMicOn;
-    }
-);
 
-updateAdministratorMicButton();
+        audioTracks.forEach(
+            track => {
 
-updateAdministratorMicStatus();
+                track.enabled =
+                    administratorMicOn;
+
+            }
+        );
+
+
+        /*
+         * An OFF microphone is removed from Auditor transports.
+         * Turning it back ON restores the same existing track.
+         */
+
+        await synchronizeAdministratorMicrophoneToAuditors();
+
+
+        updateAdministratorMicButton();
+
+        updateAdministratorMicStatus();
 
     }
 );
@@ -8490,18 +9136,32 @@ async function requestAdministratorMedia(){
                 audio:true
             });
 
+
         administratorMicOn =
             true;
+
 
         const audioTracks =
             localStream.getAudioTracks();
 
+
         audioTracks.forEach(
             track => {
+
                 track.enabled =
                     true;
+
             }
         );
+
+
+        /*
+         * If Auditor viewer connections already exist, publish
+         * this newly acquired microphone track immediately.
+         */
+
+        await synchronizeAdministratorMicrophoneToAuditors();
+
 
         updateAdministratorMicButton();
 
