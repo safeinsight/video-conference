@@ -116,7 +116,19 @@ input {
 
     display: grid;
 
-    grid-template-columns: repeat(3, 1fr);
+    /*
+     * Desktop administrator layout:
+     *
+     *     4 columns × 3 rows = 12 total tiles.
+     *
+     * Administrator permanently occupies Tile 1.
+     * Participant tiles occupy Tiles 2 through 12.
+     *
+     * Adding the three new positions horizontally preserves
+     * the existing three-row conference layout rather than
+     * adding another row above or below it.
+     */
+    grid-template-columns: repeat(4, 1fr);
     grid-template-rows: repeat(3, 1fr);
 
     gap: 1px;
@@ -1884,17 +1896,57 @@ body.mirrorMode #app {
 
 
             <!-- ===========================================
-                 TILE 1
+                 TILE 1 — ADMINISTRATOR
             ============================================ -->
 
             <div
-                class="videoTile empty"
-                id="tile1"
+                class="videoTile adminTile"
+                id="adminTile"
                 data-slot="1"
             >
 
-                <div class="tileLabel">
-                    Waiting for Participant
+                <div
+                    class="adminLogoContainer"
+                    id="adminLogoContainer"
+                >
+
+                    <img
+                        src="safe-insight-logo.png"
+                        class="adminLogo"
+                        alt="Safe Insight"
+                    >
+
+                </div>
+
+
+                <video
+                    id="adminVideo"
+                    autoplay
+                    playsinline
+                    muted
+                    class="hidden"
+                ></video>
+
+
+                <div class="tileLabel adminLabel">
+                    Administrator
+                </div>
+
+
+                <div class="tileStatus">
+
+                    <div
+                        class="statusIcon off"
+                        id="adminMicStatus"
+                    >
+                    </div>
+
+                    <div
+                        class="statusIcon off"
+                        id="adminCameraStatus"
+                    >
+                    </div>
+
                 </div>
 
             </div>
@@ -1952,57 +2004,17 @@ body.mirrorMode #app {
 
 
             <!-- ===========================================
-                 ADMINISTRATOR CENTER
+                 TILE 5
             ============================================ -->
 
             <div
-                class="videoTile adminTile"
-                id="adminTile"
+                class="videoTile empty"
+                id="tile5"
                 data-slot="5"
             >
 
-                <div
-                    class="adminLogoContainer"
-                    id="adminLogoContainer"
-                >
-
-                    <img
-                        src="safe-insight-logo.png"
-                        class="adminLogo"
-                        alt="Safe Insight"
-                    >
-
-                </div>
-
-
-                <video
-                    id="adminVideo"
-                    autoplay
-                    playsinline
-                    muted
-                    class="hidden"
-                ></video>
-
-
-                <div class="tileLabel adminLabel">
-                    Administrator
-                </div>
-
-
-                <div class="tileStatus">
-
-                    <div
-                        class="statusIcon off"
-                        id="adminMicStatus"
-                    >
-                    </div>
-
-                    <div
-                        class="statusIcon off"
-                        id="adminCameraStatus"
-                    >
-                    </div>
-
+                <div class="tileLabel">
+                    Waiting for Participant
                 </div>
 
             </div>
@@ -2067,6 +2079,57 @@ body.mirrorMode #app {
                 class="videoTile empty"
                 id="tile9"
                 data-slot="9"
+            >
+
+                <div class="tileLabel">
+                    Waiting for Participant
+                </div>
+
+            </div>
+
+
+            <!-- ===========================================
+                 TILE 10
+            ============================================ -->
+
+            <div
+                class="videoTile empty"
+                id="tile10"
+                data-slot="10"
+            >
+
+                <div class="tileLabel">
+                    Waiting for Participant
+                </div>
+
+            </div>
+
+
+            <!-- ===========================================
+                 TILE 11
+            ============================================ -->
+
+            <div
+                class="videoTile empty"
+                id="tile11"
+                data-slot="11"
+            >
+
+                <div class="tileLabel">
+                    Waiting for Participant
+                </div>
+
+            </div>
+
+
+            <!-- ===========================================
+                 TILE 12
+            ============================================ -->
+
+            <div
+                class="videoTile empty"
+                id="tile12"
+                data-slot="12"
             >
 
                 <div class="tileLabel">
@@ -2408,7 +2471,7 @@ console.log(
  */
 
 const CONFERENCE_BUILD =
-    "ADMIN-TEST v1.8";
+    "ADMIN-TEST v3.0";
 
 
 console.log(
@@ -2514,9 +2577,9 @@ const rtcConfiguration = {
             urls: "stun:stun.l.google.com:19302"
         }
 
-    ],
+    ]
 
-iceTransportPolicy: "relay"
+
 
 };
 
@@ -6906,7 +6969,6 @@ function updateAdministratorParticipant(participant){
                     ){
 
                         control.remove();
-
                     }
 
                 }
@@ -6916,7 +6978,6 @@ function updateAdministratorParticipant(participant){
         delete adminChatThreads[
             String(participant.id)
         ];
-
 
         if(
             openAdminChatThread ===
@@ -6961,7 +7022,6 @@ function updateAdministratorParticipant(participant){
                         clearParticipantTile(
                             tile
                         );
-
                     }
 
                 }
@@ -6973,7 +7033,6 @@ function updateAdministratorParticipant(participant){
          */
 
         renderParticipants();
-
 
         /*
          * SECURITY / RECORD PRESERVATION
@@ -6994,13 +7053,20 @@ function updateAdministratorParticipant(participant){
          */
 
         return;
-
     }
 
 
     /*
        Participant was approved.
        Add/update them in active participants.
+
+       created_at remains the authoritative time this
+       participant was first added to the conference.
+
+       Every Realtime UPDATE contains the database row, so
+       carry that original timestamp into the administrator's
+       local participant object along with the current media
+       state.
     */
 
     if(
@@ -7014,6 +7080,9 @@ function updateAdministratorParticipant(participant){
 
             name:
                 participant.participant_name,
+
+            createdAt:
+                participant.created_at,
 
             cameraOn:
                 participant.camera_on,
@@ -7037,7 +7106,6 @@ function updateAdministratorParticipant(participant){
 
             participants[index] =
                 updatedParticipant;
-
         }
 
 
@@ -7048,7 +7116,6 @@ function updateAdministratorParticipant(participant){
         );
 
         return;
-
     }
 
 }
@@ -7126,8 +7193,9 @@ async function allowParticipant(id){
        IMPORTANT:
        The waiting-room wrapper contains id/name plus the
        original Supabase row in databaseRecord. Camera,
-       microphone, and microphone-lock state therefore come
-       from databaseRecord rather than from the wrapper itself.
+       microphone, microphone-lock state, and original
+       created_at timestamp therefore come from databaseRecord
+       rather than from the wrapper itself.
     */
 
     const waitingParticipant =
@@ -7155,6 +7223,9 @@ async function allowParticipant(id){
        Build the administrator's active participant from
        the authoritative participant values that arrived
        from Supabase.
+
+       createdAt remains the original database created_at
+       value. Approval does not establish a new "Added" time.
     */
 
     const participant = {
@@ -7164,6 +7235,9 @@ async function allowParticipant(id){
 
         name:
             waitingParticipant.name,
+
+        createdAt:
+            waitingParticipant.databaseRecord.created_at,
 
         cameraOn:
             waitingParticipant.databaseRecord.camera_on,
@@ -7222,7 +7296,6 @@ async function allowParticipant(id){
         participants.push(
             participant
         );
-
     }
 
 
@@ -7853,7 +7926,6 @@ function renderWaitingParticipants(){
             '<p style="color:#777;">Nobody is waiting.</p>';
 
         return;
-
     }
 
 
@@ -7869,27 +7941,61 @@ function renderWaitingParticipants(){
                 "waitingParticipant";
 
 
-div.innerHTML = `
+            /*
+             * created_at is the authoritative time this
+             * participant was first added to the conference.
+             *
+             * Waiting participants retain the original
+             * Supabase row in databaseRecord.
+             */
 
-    <div class="waitingParticipantName">
-        ${escapeHtml(participant.name)}
-    </div>
+            const addedDate =
+                participant.databaseRecord?.created_at
+                ? new Date(
+                    participant.databaseRecord.created_at
+                )
+                : null;
 
-    <button
-        class="allowButton"
-        onclick="allowParticipant('${participant.id}')"
-    >
-        Allow Entry
-    </button>
 
-    <button
-        class="denyButton"
-        onclick="denyParticipant('${participant.id}')"
-    >
-        Deny
-    </button>
+            const addedText =
+                addedDate &&
+                !Number.isNaN(
+                    addedDate.getTime()
+                )
+                ? addedDate.toLocaleString()
+                : "Unknown";
 
-`;
+
+            div.innerHTML = `
+
+                <div class="waitingParticipantName">
+                    ${escapeHtml(participant.name)}
+                </div>
+
+                <div style="
+                    font-size:11px;
+                    color:#aaa;
+                    margin-bottom:8px;
+                ">
+                    Added:
+                    ${escapeHtml(addedText)}
+                </div>
+
+                <button
+                    class="allowButton"
+                    onclick="allowParticipant('${participant.id}')"
+                >
+                    Allow Entry
+                </button>
+
+                <button
+                    class="denyButton"
+                    onclick="denyParticipant('${participant.id}')"
+                >
+                    Deny
+                </button>
+
+            `;
 
             waitingList.appendChild(
                 div
@@ -7999,7 +8105,6 @@ function renderParticipants(){
             '<p style="color:#777;">No participants have entered.</p>';
 
         return;
-
     }
 
 
@@ -8012,17 +8117,50 @@ function renderParticipants(){
                 );
 
             div.className =
-            "participantControl";
+                "participantControl";
 
             div.dataset.participantId =
-            participant.id;
+                participant.id;
 
+
+            /*
+             * createdAt always represents the original
+             * conference_participants.created_at value.
+             *
+             * Approval and later participant updates must
+             * never establish a new "Added" time.
+             */
+
+            const addedDate =
+                participant.createdAt
+                ? new Date(
+                    participant.createdAt
+                )
+                : null;
+
+
+            const addedText =
+                addedDate &&
+                !Number.isNaN(
+                    addedDate.getTime()
+                )
+                ? addedDate.toLocaleString()
+                : "Unknown";
 
 
             div.innerHTML = `
 
                 <div class="participantName">
                     ${escapeHtml(participant.name)}
+                </div>
+
+                <div style="
+                    font-size:11px;
+                    color:#aaa;
+                    margin-bottom:4px;
+                ">
+                    Added:
+                    ${escapeHtml(addedText)}
                 </div>
 
                 <div style="
@@ -8098,7 +8236,6 @@ function renderParticipants(){
     );
 
     renderAdminChatRecipients();
-
 }
 
 
@@ -8554,27 +8691,33 @@ function assignParticipantToTile(
             `.videoTile[data-participant-id="${participant.id}"]`
         );
 
-if(existingTile){
+    if(existingTile){
 
-  
-    return;
-}
+        return;
+    }
 
 
     /*
        Participant does not have a tile yet.
-       Find the first available tile.
+
+       Tile 1 is permanently reserved for the
+       administrator.
+
+       Participants may occupy Tiles 2 through 12.
     */
 
     const availableTiles = [
-        1,
         2,
         3,
         4,
+        5,
         6,
         7,
         8,
-        9
+        9,
+        10,
+        11,
+        12
     ];
 
 
@@ -8606,14 +8749,15 @@ if(existingTile){
                 }
             );
 
-tile.addEventListener(
-    "dblclick",
-    function(){
-        openParticipantMirror(
-            participant.id
-        );
-    }
-);
+
+            tile.addEventListener(
+                "dblclick",
+                function(){
+                    openParticipantMirror(
+                        participant.id
+                    );
+                }
+            );
 
 
             updateParticipantTile(
@@ -8628,7 +8772,7 @@ tile.addEventListener(
 
 
     /*
-       No available tiles remain.
+       No available participant tiles remain.
     */
 
     showCustomAlert(
@@ -8753,6 +8897,7 @@ function getCameraSVG(){
         </svg>
     `;
 }
+
 
 /* =========================================================
    UPDATE PARTICIPANT TILE
@@ -10583,7 +10728,6 @@ async function loadConferenceParticipants(){
         );
 
         return;
-
     }
 
 
@@ -10606,6 +10750,17 @@ async function loadConferenceParticipants(){
 
     /*
        Rebuild the administrator state.
+
+       created_at is the authoritative time the
+       participant was first added to this conference.
+
+       Waiting participants retain the complete original
+       database row in databaseRecord.
+
+       Approved participants carry created_at forward as
+       createdAt so the administrator panel can display the
+       same original timestamp after approval and after an
+       administrator page refresh.
     */
 
     data.forEach(
@@ -10628,40 +10783,46 @@ async function loadConferenceParticipants(){
                         participant
 
                 });
-
             }
 
 
-           if(
-            participant.status ===
-            "approved"
+            if(
+                participant.status ===
+                "approved"
             ){
 
-    const restoredParticipant = {
-        id:
-            participant.id,
+                const restoredParticipant = {
 
-        name:
-            participant.participant_name,
+                    id:
+                        participant.id,
 
-        cameraOn:
-            participant.camera_on,
+                    name:
+                        participant.participant_name,
 
-        micOn:
-            participant.mic_on,
+                    createdAt:
+                        participant.created_at,
 
-        micLocked:
-            participant.mic_locked
-    };
+                    cameraOn:
+                        participant.camera_on,
 
-    participants.push(
-        restoredParticipant
-    );
+                    micOn:
+                        participant.mic_on,
 
-    assignParticipantToTile(
-        restoredParticipant
-    );
-}
+                    micLocked:
+                        participant.mic_locked
+
+                };
+
+
+                participants.push(
+                    restoredParticipant
+                );
+
+
+                assignParticipantToTile(
+                    restoredParticipant
+                );
+            }
         }
     );
 
@@ -10676,38 +10837,35 @@ async function loadConferenceParticipants(){
     );
 
 
-    
-/*
- * Reconnect WebRTC for participants
- * who were already approved when the
- * administrator refreshed the page.
- *
- * These are receive-only administrator
- * connections. Administrator camera and
- * microphone media are not required.
- */
-if(participants.length){
+    /*
+     * Reconnect WebRTC for participants
+     * who were already approved when the
+     * administrator refreshed the page.
+     *
+     * These are receive-only administrator
+     * connections. Administrator camera and
+     * microphone media are not required.
+     */
+    if(participants.length){
 
-    while(!webRTCSignalingReady){
+        while(!webRTCSignalingReady){
 
-        await new Promise(
-            resolve => setTimeout(resolve, 50)
-        );
+            await new Promise(
+                resolve => setTimeout(resolve, 50)
+            );
+        }
 
+
+        for(
+            const participant
+            of participants
+        ){
+
+            await createAdminPeerConnection(
+                participant.id
+            );
+        }
     }
-
-    for(
-        const participant
-        of participants
-    ){
-
-        await createAdminPeerConnection(
-            participant.id
-        );
-
-    }
-
-}
 
 }
 
