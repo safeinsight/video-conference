@@ -2498,7 +2498,7 @@ console.log(
  */
 
 const CONFERENCE_BUILD =
-    "ADMIN-TEST v3.0b";
+    "ADMIN-TEST v3.0d";
 
 
 console.log(
@@ -5955,6 +5955,21 @@ async function handleAdminWebRTCSignal(
      *
      * That is the correct moment to create the
      * administrator connection and send the offer.
+     *
+     * IMPORTANT REFRESH / RECONNECT RULE:
+     *
+     * participant-ready describes the participant's CURRENT
+     * browser transport readiness. It does not grant conference
+     * authority and it does not change participant status.
+     *
+     * A browser refresh may leave the administrator holding the
+     * previous RTCPeerConnection for this same participant ID.
+     * That old transport belongs to the browser instance that no
+     * longer exists.
+     *
+     * Therefore a new participant-ready signal intentionally
+     * replaces any existing administrator-side WebRTC transport
+     * for this participant before a fresh offer is created.
      */
 
     if(
@@ -5964,6 +5979,46 @@ async function handleAdminWebRTCSignal(
 
         console.log(
             "ADMIN RECEIVED PARTICIPANT READY:",
+            participantId
+        );
+
+
+        if(
+            adminPeerConnections.has(
+                participantId
+            )
+        ){
+
+            console.log(
+                "Replacing stale administrator WebRTC connection:",
+                participantId
+            );
+
+
+            closeParticipantWebRTC(
+                participantId
+            );
+
+        }
+
+
+        /*
+         * ICE candidates queued for the previous transport must
+         * never be applied to the newly created connection.
+         */
+
+        pendingAdminIceCandidates.delete(
+            participantId
+        );
+
+
+        /*
+         * The previous remote MediaStream belongs to the closed
+         * transport as well. createAdminPeerConnection() will
+         * establish a fresh stream for the new connection.
+         */
+
+        adminRemoteStreams.delete(
             participantId
         );
 
