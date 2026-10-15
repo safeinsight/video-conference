@@ -2408,7 +2408,7 @@ console.log(
  */
 
 const CONFERENCE_BUILD =
-    "STUDENT-TEST v1.3";
+    "STUDENT-TEST v3.0";
 
 
 console.log(
@@ -4229,7 +4229,6 @@ async function startParticipantWebRTC(
 
 
 
-
     /*
      * Send participant ICE candidates.
      */
@@ -4326,15 +4325,60 @@ async function startParticipantWebRTC(
 
 
     /*
-     * The participant does NOT create the
-     * initial offer.
+     * The participant does NOT create the initial offer.
      *
-     * The administrator does that after
-     * receiving the participant.
+     * Before asking the administrator to create that offer,
+     * make certain this browser's WebRTC signaling channel
+     * has actually reached SUBSCRIBED.
+     *
+     * This prevents the administrator from sending an offer
+     * before the participant is ready to receive it.
      */
 
+    while(!webRTCSignalingReady){
+
+        await new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    50
+                )
+        );
+
+    }
+
+
+    /*
+     * The participant is now:
+     *
+     * 1. approved,
+     * 2. holding its WebRTC peer connection,
+     * 3. holding its local media tracks, and
+     * 4. subscribed to the signaling channel.
+     *
+     * Tell the administrator that negotiation may begin.
+     */
+
+    await sendWebRTCSignal({
+
+        type:
+            "participant-ready",
+
+        senderId:
+            window.myParticipantId,
+
+        targetId:
+            "administrator",
+
+        participantId:
+            window.myParticipantId
+
+    });
+
+
     console.log(
-        "Participant WebRTC ready and waiting for administrator offer."
+        "PARTICIPANT WEBRTC READY SIGNAL SENT:",
+        window.myParticipantId
     );
 
 }
