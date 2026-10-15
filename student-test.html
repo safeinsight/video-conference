@@ -453,113 +453,146 @@ input {
     align-items: center;
     justify-content: center;
 
-    padding: 20px;
+    padding: 24px;
 }
 
 .joinBox {
 
-    width: min(92vw, 760px);
+    width: min(630px, 100%);
 
     background: #fff;
 
     color: #111;
 
-    border-radius: 10px;
+    border-radius: 16px;
 
-    padding: 46px 50px 36px;
+    padding: 48px 44px 42px;
 
     text-align: center;
 
-    box-shadow: 0 10px 40px rgba(0,0,0,.5);
+    box-shadow: 0 18px 50px rgba(0,0,0,.45);
 }
 
 .joinLogo {
 
-    width: 430px;
-    max-width: 80%;
+    width: min(365px, 85%);
 
-    margin-bottom: 28px;
+    height: auto;
+
+    margin-bottom: 42px;
 }
 
 .joinBox h1 {
 
-    margin: 5px 0 22px;
+    margin: 0 0 18px;
 
-    font-size: 42px;
+    font-size: 40px;
+
+    line-height: 1.15;
+
+    font-weight: 800;
+
+    color: #111;
 }
 
 .joinSafetyWarning {
 
     display: inline-block;
 
-    margin: 0 0 24px;
+    margin: 0 0 28px;
 
-    padding: 10px 18px;
+    padding: 9px 16px;
 
-    border: 2px solid #ed1c24;
+    border: 2px solid #e51b23;
 
     border-radius: 8px;
 
-    color: #ed1c24;
+    color: #e51b23;
 
     background: #fff;
 
-    font-size: 20px;
+    font-size: 17px;
 
     font-weight: 800;
 
-    letter-spacing: .2px;
+    letter-spacing: .5px;
 }
 
 .joinBox p {
 
-    color: #555;
+    margin: 0 0 34px;
 
-    line-height: 1.4;
+    color: #5c5c5c;
 
-    font-size: 22px;
+    font-size: 20px;
 
-    margin: 0 0 20px;
+    line-height: 1.45;
+}
+
+.joinBox p strong {
+
+    font-weight: 800;
 }
 
 #nameInput {
 
     width: 100%;
 
-    padding: 18px 20px;
+    padding: 17px 18px;
 
-    border: 1px solid #bbb;
+    border: 1px solid #bdbdbd;
 
     border-radius: 8px;
 
-    font-size: 21px;
+    background: #fff;
 
-    margin: 12px 0 22px;
+    color: #222;
+
+    font-size: 20px;
+
+    margin: 0;
+
+    outline: none;
+}
+
+#nameInput::placeholder {
+
+    color: #777;
+}
+
+#nameInput:focus {
+
+    border-color: #e51b23;
+
+    box-shadow: 0 0 0 2px rgba(229,27,35,.12);
 }
 
 #knockButton {
 
     width: 100%;
 
-    padding: 19px;
+    margin-top: 22px;
+
+    padding: 17px 18px;
 
     border: none;
 
     border-radius: 8px;
 
-    background: #d71920;
+    background: #e51b23;
 
     color: #fff;
 
-    font-size: 21px;
+    font-size: 19px;
 
-    font-weight: bold;
+    font-weight: 800;
 
     cursor: pointer;
 }
 
 #knockButton:hover {
-    background: #b51016;
+
+    background: #ca171e;
 }
 
 
