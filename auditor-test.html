@@ -5,144 +5,552 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CCW Conference Audit</title>
 <style>
-*{box-sizing:border-box}
-html,body{margin:0;min-height:100%;font-family:Arial,Helvetica,sans-serif;background:#111;color:#fff}
-body{min-height:100vh}
-.hidden{display:none!important}
-.screen{min-height:100vh;width:100%}
-#joinScreen,#waitingScreen,#endedScreen{
-    display:flex;align-items:center;justify-content:center;padding:24px;
-    background:radial-gradient(circle at top,#2b2b2b 0,#111 55%,#080808 100%)
+*{
+    box-sizing:border-box;
 }
+
+html,
+body{
+    margin:0;
+    min-height:100%;
+    font-family:Arial,Helvetica,sans-serif;
+    background:#f3f3f3;
+    color:#111;
+}
+
+body{
+    min-height:100vh;
+}
+
+.hidden{
+    display:none!important;
+}
+
+.screen{
+    min-height:100vh;
+    width:100%;
+}
+
+/*
+ * =========================================================
+ * STANDARD SAFE INSIGHT KNOCK / STATUS SCREENS
+ * =========================================================
+ */
+
+#joinScreen,
+#waitingScreen,
+#endedScreen{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    background:
+        linear-gradient(
+            rgba(0,0,0,.82),
+            rgba(0,0,0,.82)
+        ),
+        #222;
+}
+
 .card{
-    width:min(620px,100%);background:#1d1d1d;border:1px solid #3b3b3b;border-radius:18px;
-    padding:34px;box-shadow:0 18px 50px rgba(0,0,0,.45);text-align:center
+    width:min(630px,100%);
+    background:#fff;
+    color:#111;
+    border-radius:16px;
+    padding:48px 44px 42px;
+    box-shadow:0 18px 50px rgba(0,0,0,.45);
+    text-align:center;
 }
-h1{font-size:clamp(30px,5vw,48px);margin:0 0 14px}
+
+.safeInsightLogo{
+    display:block;
+    width:min(365px,85%);
+    height:auto;
+    margin:0 auto 42px;
+}
+
+h1{
+    margin:0 0 18px;
+    font-size:40px;
+    line-height:1.15;
+    font-weight:800;
+    color:#111;
+}
+
 .auditWarning{
-    display:inline-block;margin:2px 0 28px;padding:10px 16px;border:2px solid #ffd400;
-    border-radius:8px;font-weight:800;letter-spacing:.7px;color:#ffd400
+    display:inline-block;
+    margin:0 0 28px;
+    padding:9px 16px;
+    border:2px solid #e51b23;
+    border-radius:8px;
+    color:#e51b23;
+    background:#fff;
+    font-size:17px;
+    font-weight:800;
+    letter-spacing:.5px;
 }
-.instructions{font-size:20px;line-height:1.5;margin:0 0 22px}
-.instructions strong{font-weight:800}
+
+.instructions{
+    margin:0 0 34px;
+    color:#5c5c5c;
+    font-size:20px;
+    line-height:1.45;
+}
+
+.instructions strong{
+    font-weight:800;
+}
+
 #nameInput{
-    width:100%;font-size:20px;padding:15px 16px;border-radius:10px;border:1px solid #666;
-    background:#0d0d0d;color:#fff;outline:none
+    width:100%;
+    padding:17px 18px;
+    border:1px solid #bdbdbd;
+    border-radius:8px;
+    background:#fff;
+    color:#222;
+    font-size:20px;
+    outline:none;
 }
-#nameInput:focus{border-color:#ffd400}
-.primaryButton,.controlButton{
-    border:0;border-radius:10px;cursor:pointer;font-weight:800
+
+#nameInput::placeholder{
+    color:#777;
 }
+
+#nameInput:focus{
+    border-color:#e51b23;
+    box-shadow:0 0 0 2px rgba(229,27,35,.12);
+}
+
+.primaryButton,
+.controlButton{
+    border:0;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:800;
+}
+
 .primaryButton{
-    width:100%;margin-top:16px;padding:15px 18px;font-size:19px;background:#ffd400;color:#111
+    width:100%;
+    margin-top:22px;
+    padding:17px 18px;
+    background:#e51b23;
+    color:#fff;
+    font-size:19px;
 }
-.primaryButton:disabled{opacity:.55;cursor:not-allowed}
+
+.primaryButton:hover{
+    background:#ca171e;
+}
+
+.primaryButton:disabled{
+    opacity:.55;
+    cursor:not-allowed;
+}
+
+.notice{
+    margin-top:20px;
+    color:#666;
+    font-size:14px;
+    line-height:1.5;
+}
+
 #waitingScreen .spinner{
-    width:46px;height:46px;border:5px solid #444;border-top-color:#ffd400;border-radius:50%;
-    margin:0 auto 20px;animation:spin 1s linear infinite
+    width:46px;
+    height:46px;
+    margin:0 auto 24px;
+    border:5px solid #ddd;
+    border-top-color:#e51b23;
+    border-radius:50%;
+    animation:spin 1s linear infinite;
 }
-@keyframes spin{to{transform:rotate(360deg)}}
-#conferenceScreen{display:none;flex-direction:column;height:100vh;background:#0b0b0b}
+
+@keyframes spin{
+    to{
+        transform:rotate(360deg);
+    }
+}
+
+/*
+ * =========================================================
+ * AUDITOR CONFERENCE SCREEN
+ * =========================================================
+ */
+
+#conferenceScreen{
+    display:none;
+    flex-direction:column;
+    height:100vh;
+    background:#0b0b0b;
+    color:#fff;
+}
+
 #conferenceHeader{
-    flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px;
-    padding:12px 18px;background:#181818;border-bottom:1px solid #333
+    flex:0 0 auto;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    padding:12px 18px;
+    background:#181818;
+    border-bottom:1px solid #333;
 }
-.headerTitle{font-size:20px;font-weight:800}
-.headerSub{font-size:12px;color:#ffd400;font-weight:800;letter-spacing:.5px;margin-top:3px}
-#connectionStatus{font-size:14px;color:#ffd400;white-space:nowrap}
-#videoArea{flex:1;min-height:0;overflow:auto;padding:14px}
+
+.headerTitle{
+    font-size:20px;
+    font-weight:800;
+}
+
+.headerSub{
+    margin-top:3px;
+    color:#e51b23;
+    font-size:12px;
+    font-weight:800;
+    letter-spacing:.5px;
+}
+
+#connectionStatus{
+    color:#ddd;
+    font-size:14px;
+    white-space:nowrap;
+}
+
+#videoArea{
+    flex:1;
+    min-height:0;
+    overflow:auto;
+    padding:14px;
+}
+
 #videoGrid{
-    display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;
-    width:100%;min-height:100%
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:12px;
+    width:100%;
+    min-height:100%;
 }
+
 .videoTile{
-    position:relative;min-height:190px;background:#000;border:1px solid #333;border-radius:12px;
-    overflow:hidden;display:flex;align-items:center;justify-content:center
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-height:190px;
+    overflow:hidden;
+    border:1px solid #333;
+    border-radius:12px;
+    background:#000;
 }
-.videoTile video{width:100%;height:100%;object-fit:cover;background:#000}
-.videoTile.localTile video{transform:scaleX(-1)}
+
+.videoTile video{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    background:#000;
+}
+
+.videoTile.localTile video{
+    transform:scaleX(-1);
+}
+
 .videoPlaceholder{
-    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    background:#171717;color:#aaa;font-size:15px;text-align:center;padding:18px
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:18px;
+    background:#171717;
+    color:#aaa;
+    font-size:15px;
+    text-align:center;
 }
+
 .tileLabel{
-    position:absolute;left:8px;bottom:8px;max-width:calc(100% - 16px);
-    background:rgba(0,0,0,.72);padding:6px 9px;border-radius:7px;font-size:13px;font-weight:700;
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap
+    position:absolute;
+    left:8px;
+    bottom:8px;
+    max-width:calc(100% - 16px);
+    overflow:hidden;
+    padding:6px 9px;
+    border-radius:7px;
+    background:rgba(0,0,0,.72);
+    font-size:13px;
+    font-weight:700;
+    text-overflow:ellipsis;
+    white-space:nowrap;
 }
-.tileRole{color:#ffd400;font-size:11px;margin-left:5px}
+
+.tileRole{
+    margin-left:5px;
+    color:#e51b23;
+    font-size:11px;
+}
+
 #controls{
-    flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;
-    padding:12px;background:#181818;border-top:1px solid #333
+    flex:0 0 auto;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    flex-wrap:wrap;
+    padding:12px;
+    background:#181818;
+    border-top:1px solid #333;
 }
-.controlButton{padding:12px 18px;font-size:15px;background:#333;color:#fff}
-.controlButton.active{background:#ffd400;color:#111}
-.controlButton.exit{background:#9d1c1c}
-#emptyMessage{color:#888;text-align:center;padding:30px;grid-column:1/-1}
-.notice{color:#aaa;font-size:14px;line-height:1.5;margin-top:18px}
-@media(max-width:1050px){#videoGrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+
+.controlButton{
+    padding:12px 18px;
+    background:#333;
+    color:#fff;
+    font-size:15px;
+}
+
+.controlButton.active{
+    background:#e51b23;
+    color:#fff;
+}
+
+.controlButton.exit{
+    background:#9d1c1c;
+}
+
+#emptyMessage{
+    grid-column:1/-1;
+    padding:30px;
+    color:#888;
+    text-align:center;
+}
+
+/*
+ * =========================================================
+ * RESPONSIVE
+ * =========================================================
+ */
+
+@media(max-width:1050px){
+
+    #videoGrid{
+        grid-template-columns:repeat(3,minmax(0,1fr));
+    }
+}
+
 @media(max-width:760px){
-    #videoGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
-    .videoTile{min-height:150px}
-    #conferenceHeader{align-items:flex-start}
+
+    .card{
+        padding:38px 28px 34px;
+    }
+
+    .safeInsightLogo{
+        margin-bottom:34px;
+    }
+
+    h1{
+        font-size:34px;
+    }
+
+    #videoGrid{
+        grid-template-columns:repeat(2,minmax(0,1fr));
+    }
+
+    .videoTile{
+        min-height:150px;
+    }
+
+    #conferenceHeader{
+        align-items:flex-start;
+    }
 }
+
 @media(max-width:480px){
-    .card{padding:24px 18px}
-    #videoGrid{grid-template-columns:1fr}
-    .videoTile{min-height:220px}
-    #controls{gap:7px}
-    .controlButton{flex:1;padding:11px 8px}
+
+    #joinScreen,
+    #waitingScreen,
+    #endedScreen{
+        padding:14px;
+    }
+
+    .card{
+        padding:30px 20px;
+    }
+
+    .safeInsightLogo{
+        width:min(330px,90%);
+        margin-bottom:28px;
+    }
+
+    h1{
+        font-size:29px;
+    }
+
+    .auditWarning{
+        font-size:14px;
+    }
+
+    .instructions{
+        font-size:18px;
+    }
+
+    #videoGrid{
+        grid-template-columns:1fr;
+    }
+
+    .videoTile{
+        min-height:220px;
+    }
+
+    #controls{
+        gap:7px;
+    }
+
+    .controlButton{
+        flex:1;
+        padding:11px 8px;
+    }
 }
+
 </style>
 </head>
 <body>
 
 <section id="joinScreen" class="screen">
     <div class="card">
+
+        <img
+            src="safe-insight-logo.png"
+            alt="Safe Insight"
+            class="safeInsightLogo"
+        >
+
         <h1>CCW Conference Audit</h1>
-        <div class="auditWarning">VIEW ONLY - NO PERMISSIONS</div>
-        <p class="instructions">Please Enter Your <strong>FULL NAME</strong><br>Then Knock To Join Room</p>
-        <input id="nameInput" type="text" autocomplete="name" maxlength="120" placeholder="Full Name">
-        <button id="knockButton" class="primaryButton">🔔 Knock to Enter</button>
-        <div class="notice">After admission you may control only your own camera and microphone. You cannot control other conference participants.</div>
+
+        <div class="auditWarning">
+            VIEW ONLY - NO PERMISSIONS
+        </div>
+
+        <p class="instructions">
+            Please Enter Your <strong>FULL NAME</strong><br>
+            Then Knock To Join Room
+        </p>
+
+        <input
+            id="nameInput"
+            type="text"
+            autocomplete="name"
+            maxlength="120"
+            placeholder="Enter your FULL NAME"
+        >
+
+        <button
+            id="knockButton"
+            class="primaryButton"
+        >
+            🔔 Knock to Enter
+        </button>
+
+        <div class="notice">
+            After admission you may control only your own camera and microphone.
+            You cannot control other conference participants.
+        </div>
+
     </div>
 </section>
 
 <section id="waitingScreen" class="screen hidden">
     <div class="card">
+
+        <img
+            src="safe-insight-logo.png"
+            alt="Safe Insight"
+            class="safeInsightLogo"
+        >
+
         <div class="spinner"></div>
+
         <h1>Waiting for Approval</h1>
-        <p class="instructions"><strong id="waitingName"></strong><br>Your audit request has been sent to the conference administrator.</p>
-        <div class="auditWarning">VIEW ONLY - NO PERMISSIONS</div>
+
+        <p class="instructions">
+            <strong id="waitingName"></strong><br>
+            Your audit request has been sent to the conference administrator.
+        </p>
+
+        <div class="auditWarning">
+            VIEW ONLY - NO PERMISSIONS
+        </div>
+
     </div>
 </section>
 
 <section id="conferenceScreen" class="screen">
     <header id="conferenceHeader">
+
         <div>
-            <div class="headerTitle">CCW Conference Audit</div>
-            <div class="headerSub">VIEW ONLY - NO PERMISSIONS</div>
+            <div class="headerTitle">
+                CCW Conference Audit
+            </div>
+
+            <div class="headerSub">
+                VIEW ONLY - NO PERMISSIONS
+            </div>
         </div>
-        <div id="connectionStatus">● Connecting...</div>
+
+        <div id="connectionStatus">
+            ● Connecting...
+        </div>
+
     </header>
 
     <main id="videoArea">
         <div id="videoGrid">
-            <div id="emptyMessage">Waiting for conference video...</div>
+            <div id="emptyMessage">
+                Waiting for conference video...
+            </div>
         </div>
     </main>
 
     <footer id="controls">
-        <button id="micButton" class="controlButton">🔇 Mic OFF</button>
-        <button id="cameraButton" class="controlButton active">📷 Camera ON</button>
-        <button id="exitButton" class="controlButton exit">Exit Conference</button>
+
+        <button
+            id="micButton"
+            class="controlButton"
+        >
+            🔇 Mic OFF
+        </button>
+
+        <button
+            id="cameraButton"
+            class="controlButton active"
+        >
+            📷 Camera ON
+        </button>
+
+        <button
+            id="exitButton"
+            class="controlButton exit"
+        >
+            Exit Conference
+        </button>
+
     </footer>
 </section>
 
 <section id="endedScreen" class="screen hidden">
     <div class="card">
+
+        <img
+            src="safe-insight-logo.png"
+            alt="Safe Insight"
+            class="safeInsightLogo"
+        >
+
         <h1>Conference Audit Ended</h1>
-        <p class="instructions" id="endedMessage">You have left the conference.</p>
+
+        <p
+            class="instructions"
+            id="endedMessage"
+        >
+            You have left the conference.
+        </p>
+
     </div>
 </section>
 
