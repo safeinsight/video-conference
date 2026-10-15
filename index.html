@@ -6563,29 +6563,24 @@ async function allowParticipant(id){
 
 
     /*
-       Update the participant's status.
+       Securely approve the participant.
+
+       Administrator approval is performed through the
+       authenticated, organization-scoped database RPC.
+       Direct browser UPDATE access to conference_participants
+       is intentionally not permitted.
     */
 
     const {
         data,
         error
     } =
-    await supabaseClient
-        .from("conference_participants")
-        .update({
-
-            status: "approved",
-
-            updated_at:
-                new Date().toISOString()
-
-        })
-        .eq(
-            "id",
-            id
-        )
-        .select()
-        .single();
+    await supabaseClient.rpc(
+        "approve_conference_participant",
+        {
+            requested_participant_id: id
+        }
+    );
 
 
     /*
@@ -6604,7 +6599,6 @@ async function allowParticipant(id){
         );
 
         return;
-
     }
 
 
@@ -7368,26 +7362,25 @@ async function denyParticipant(id){
     );
 
 
+    /*
+       Securely deny the participant.
+
+       Administrator denial is performed through the
+       authenticated, organization-scoped database RPC.
+       Direct browser UPDATE access to conference_participants
+       is intentionally not permitted.
+    */
+
     const {
         data,
         error
     } =
-    await supabaseClient
-        .from("conference_participants")
-        .update({
-
-            status: "denied",
-
-            updated_at:
-                new Date().toISOString()
-
-        })
-        .eq(
-            "id",
-            id
-        )
-        .select()
-        .single();
+    await supabaseClient.rpc(
+        "deny_conference_participant",
+        {
+            requested_participant_id: id
+        }
+    );
 
 
     if(error){
