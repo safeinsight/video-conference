@@ -9048,19 +9048,19 @@ function renderParticipants(){
 
 
             /*
-             * The authoritative participant role determines
-             * which administrator controls belong here.
+             * Auditor role affects the Auditor's authority,
+             * not the administrator's authority.
              *
-             * Ordinary participants retain the existing
-             * administrator controls unchanged.
+             * The Auditor is VIEW ONLY with respect to the
+             * conference and other participants.
              *
-             * Auditors are observation participants. They
-             * control their own camera and microphone from
-             * the Auditor interface, so the administrator
-             * receives no camera, microphone, or microphone
-             * lock controls for them.
+             * An authorized administrator retains the same
+             * participant-management controls over an Auditor:
              *
-             * The administrator retains Remove authority.
+             * - Camera
+             * - Microphone
+             * - Microphone Lock
+             * - Remove
              */
 
             const isAuditor =
@@ -9089,54 +9089,44 @@ function renderParticipants(){
                 : "";
 
 
-            const participantControls =
-                isAuditor
-                ? `
-                    <button
-                        class="danger"
-                        onclick="removeParticipant('${participant.id}')"
-                    >
-                        Remove
-                    </button>
-                `
-                : `
-                    <button
-                        onclick="toggleParticipantCamera('${participant.id}')"
-                    >
-                        ${
-                            participant.cameraOn
-                            ? "Camera OFF"
-                            : "Camera ON"
-                        }
-                    </button>
+            const participantControls = `
+                <button
+                    onclick="toggleParticipantCamera('${participant.id}')"
+                >
+                    ${
+                        participant.cameraOn
+                        ? "Camera OFF"
+                        : "Camera ON"
+                    }
+                </button>
 
-                    <button
-                        onclick="toggleParticipantMic('${participant.id}')"
-                    >
-                        ${
-                            participant.micOn
-                            ? "Mute Mic"
-                            : "Unmute Mic"
-                        }
-                    </button>
+                <button
+                    onclick="toggleParticipantMic('${participant.id}')"
+                >
+                    ${
+                        participant.micOn
+                        ? "Mute Mic"
+                        : "Unmute Mic"
+                    }
+                </button>
 
-                    <button
-                        onclick="toggleMicLock('${participant.id}')"
-                    >
-                        ${
-                            participant.micLocked
-                            ? "🔓 Unlock Mic"
-                            : "🔒 Lock Mic"
-                        }
-                    </button>
+                <button
+                    onclick="toggleMicLock('${participant.id}')"
+                >
+                    ${
+                        participant.micLocked
+                        ? "🔓 Unlock Mic"
+                        : "🔒 Lock Mic"
+                    }
+                </button>
 
-                    <button
-                        class="danger"
-                        onclick="removeParticipant('${participant.id}')"
-                    >
-                        Remove
-                    </button>
-                `;
+                <button
+                    class="danger"
+                    onclick="removeParticipant('${participant.id}')"
+                >
+                    Remove
+                </button>
+            `;
 
 
             div.innerHTML = `
@@ -9164,14 +9154,12 @@ function renderParticipants(){
 
                     Camera:
                     ${participant.cameraOn ? "ON" : "OFF"}
-
                     &nbsp;&nbsp;
 
                     Mic:
                     ${participant.micOn ? "ON" : "OFF"}
 
                     ${
-                        !isAuditor &&
                         participant.micLocked
                         ? " 🔒"
                         : ""
