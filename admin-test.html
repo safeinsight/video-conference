@@ -460,7 +460,19 @@ input {
 
     background: rgba(0,0,0,.92);
 
-    display: flex;
+    /*
+     * Role-specific startup safety.
+     *
+     * Do not paint the participant Knock screen before the
+     * application has determined which workflow this browser
+     * should enter.
+     *
+     * Ordinary participant initialization explicitly reveals
+     * this screen after startup. Administrator authorization
+     * therefore cannot briefly expose the participant UI while
+     * authentication and room authorization are still resolving.
+     */
+    display: none;
 
     align-items: center;
     justify-content: center;
@@ -2498,7 +2510,7 @@ console.log(
  */
 
 const CONFERENCE_BUILD =
-    "ADMIN-TEST v3.0d";
+    "ADMIN-TEST v3.1";
 
 
 console.log(
@@ -3672,7 +3684,19 @@ function initializeParticipant(){
     administratorToolbar.style.display = "none";
     adminPanel.style.display = "none";
 
+    /*
+     * The Knock screen begins hidden in CSS so an administrator
+     * URL cannot briefly paint participant UI while administrator
+     * authentication and authorization are still resolving.
+     *
+     * Reaching this function means the application has actually
+     * selected the ordinary participant workflow, so it is now
+     * appropriate to reveal the Knock screen.
+     */
     joinScreen.classList.remove("hidden");
+
+    joinScreen.style.display =
+        "flex";
 
 }
 
