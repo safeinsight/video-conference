@@ -2408,7 +2408,7 @@ console.log(
  */
 
 const CONFERENCE_BUILD =
-    "STUDENT-TEST v3.1";
+    "STUDENT-TEST v3.2";
 
 
 console.log(
@@ -2649,7 +2649,7 @@ async function ensureTurnCredentials(){
 
 
                 console.log(
-                    "Secure TURN fallback ready."
+                    "Participant TURN credentials loaded."
                 );
 
 
@@ -2658,7 +2658,7 @@ async function ensureTurnCredentials(){
             }catch(error){
 
                 console.error(
-                    "TURN credential request failed:",
+                    "Participant TURN credential request failed:",
                     error
                 );
 
@@ -2666,18 +2666,8 @@ async function ensureTurnCredentials(){
 
             }finally{
 
-                /*
-                 * Keep successful credentials cached in
-                 * rtcConfiguration.
-                 *
-                 * A failed request may be attempted again later
-                 * after participant authority becomes available.
-                 */
-
-                if(!turnCredentialsLoaded){
-                    turnCredentialsPromise =
-                        null;
-                }
+                turnCredentialsPromise =
+                    null;
 
             }
 
@@ -2691,6 +2681,9 @@ async function ensureTurnCredentials(){
 /*
  * Administrator:
  * One RTCPeerConnection for each participant.
+ *
+ * This state remains in the shared conference codebase even
+ * though the student page does not administer participants.
  */
 
 const adminPeerConnections =
@@ -2699,11 +2692,31 @@ const adminPeerConnections =
 
 /*
  * Participant:
- * The administrator's RTCPeerConnection.
+ * One RTCPeerConnection for each authorized viewer browser.
+ *
+ * The Map key is the viewer's unique WebRTC signaling identity.
+ *
+ * The participant's existing local camera/microphone stream is
+ * attached independently to each viewer connection. The physical
+ * camera and microphone are NOT requested again for each viewer.
  */
 
-let participantPeerConnection =
-    null;
+const participantPeerConnections =
+    new Map();
+
+
+/*
+ * Viewer ICE candidates may arrive before that viewer's offer
+ * has been installed as the remote description.
+ *
+ * Keep those candidates isolated by viewer ID so candidates
+ * belonging to Admin A can never be applied to Admin B's
+ * RTCPeerConnection.
+ */
+
+const pendingParticipantIceCandidatesByViewer =
+    new Map();
+
 
 let mirrorPeerConnection =
     null;
@@ -2723,6 +2736,7 @@ let webRTCSignalingReady =
 let mirrorCameraOn =
     true;
 
+
 /*
  * Supabase WebRTC signaling channel.
  */
@@ -2730,8 +2744,6 @@ let mirrorCameraOn =
 let webrtcSignalingChannel =
     null;
 
-let pendingParticipantIceCandidates =
-    [];
 
 /* =========================================================
    ADMINISTRATOR ACCESS REQUEST
@@ -4401,10 +4413,16 @@ function initializeWebRTCSignaling(){
 
 
                 /*
-                 * Ignore our own signals.
+                 * Ignore signals sent by this participant.
+                 *
+                 * Administrator media signals now use each
+                 * administrator browser's unique viewer ID as
+                 * senderId, so offers and ICE from multiple
+                 * administrator browsers remain distinguishable.
                  */
 
                 if(
+                    !isAdministrator &&
                     signal.senderId ===
                     window.myParticipantId
                 ){
@@ -4413,10 +4431,14 @@ function initializeWebRTCSignaling(){
 
                 }
 
+
     /*
- * Participant receives
- * mirror WebRTC signal.
- */
+     * Participant receives
+     * mirror WebRTC signal.
+     *
+     * Mirror signaling remains independent from the new
+     * multi-viewer participant camera/microphone transport.
+     */
 if(
     !isAdministrator &&
     signal.targetId ===
@@ -4494,11 +4516,15 @@ if(
     return;
 }
 
+
 /*
  * Participant receives
  * administrator screen-share request.
+ *
+ * Conference controls continue to use the participant ID as
+ * their target. Multi-viewer media transport does not change
+ * administrator control behavior.
  */
-
 if(
     !isAdministrator &&
     signal.targetId ===
@@ -4511,18 +4537,27 @@ if(
         signal
     );
 
-            await showScreenShareRequest(
-            signal.participantId
-        );
+    await showScreenShareRequest(
+        signal.participantId
+    );
 
     return;
 }
 
-                /*
-                 * Participant receives
-                 * administrator signal.
-                 */
 
+/*
+ * Participant receives administrator signals.
+ *
+ * Media offers and ICE candidates from Admin A, Admin B, and
+ * future authorized viewers are all addressed to this
+ * participant ID.
+ *
+ * Their viewerId identifies which independent participant-side
+ * RTCPeerConnection owns that media negotiation.
+ *
+ * Existing administrator control signals continue through this
+ * same handler unchanged.
+ */
 if(
     !isAdministrator &&
     signal.targetId ===
@@ -4547,24 +4582,26 @@ if(
 }
 
 
-                /*
-                 * Administrator receives
-                 * participant signal.
-                 */
+/*
+ * Administrator-side signaling remains in the shared codebase.
+ *
+ * The student page does not enter administrator mode, but
+ * preserving this branch keeps the shared conference code
+ * structurally compatible.
+ */
+if(
+    isAdministrator &&
+    signal.targetId ===
+    "administrator"
+){
 
-                if(
-                    isAdministrator &&
-                    signal.targetId ===
-                    "administrator"
-                ){
+    await handleAdminWebRTCSignal(
+        signal
+    );
 
-                    await handleAdminWebRTCSignal(
-                        signal
-                    );
+    return;
 
-                    return;
-
-                }
+}
 
             }
         )
@@ -4604,7 +4641,7 @@ async function startParticipantWebRTC(
 ){
 
     console.log(
-        "Starting participant WebRTC:",
+        "Starting participant multi-viewer WebRTC:",
         participant
     );
 
@@ -4616,6 +4653,7 @@ async function startParticipantWebRTC(
         );
 
         return;
+
     }
 
 
@@ -4626,34 +4664,24 @@ async function startParticipantWebRTC(
         );
 
         return;
-    }
 
-
-    if(
-        participantPeerConnection
-    ){
-
-        console.log(
-            "Participant peer connection already exists."
-        );
-
-        return;
     }
 
 
     /*
-     * The approved participant has reached the point where an
-     * actual WebRTC connection is about to be created.
+     * The participant has now been approved.
      *
-     * Request temporary TURN credentials using the participant's
-     * ID and private browser-held credential.
+     * Request temporary TURN credentials only after
+     * approval so the secured Edge Function can verify:
      *
-     * The secured Edge Function independently verifies that this
-     * participant is approved for this room.
+     * participant ID
+     * + private participant credential
+     * + room
+     * + approved conference status.
      *
-     * TURN remains supplemental. If the credential request fails,
-     * retain the existing STUN configuration and allow WebRTC to
-     * attempt its normal direct connection.
+     * TURN remains supplemental. If TURN is unavailable,
+     * preserve STUN and allow WebRTC to attempt its normal
+     * direct connection.
      */
 
     const participantTurnReady =
@@ -4669,137 +4697,41 @@ async function startParticipantWebRTC(
     }
 
 
-    participantPeerConnection =
-        new RTCPeerConnection(
-            rtcConfiguration
-        );
-
-
     /*
-     * Send participant camera
-     * and microphone to administrator.
+     * IMPORTANT MULTI-VIEWER RULE
+     *
+     * Do NOT create one generic administrator
+     * RTCPeerConnection here.
+     *
+     * Every authorized viewer browser will send its own offer
+     * carrying its unique viewerId.
+     *
+     * handleParticipantWebRTCSignal() will create one
+     * participant-side RTCPeerConnection for that viewer and
+     * attach this same local camera/microphone stream to it.
+     *
+     * Therefore:
+     *
+     * Admin A    -> independent RTCPeerConnection
+     * Admin B    -> independent RTCPeerConnection
+     * Future
+     * Auditor C  -> independent RTCPeerConnection
+     *
+     * Camera and microphone capture remain shared through
+     * localStream. The browser does NOT request the physical
+     * camera or microphone again for each viewer.
      */
-
-    localStream
-        .getTracks()
-        .forEach(
-            track => {
-
-                participantPeerConnection.addTrack(
-                    track,
-                    localStream
-                );
-
-            }
-        );
-
-
-
-
-    /*
-     * Send participant ICE candidates.
-     */
-
-    participantPeerConnection.onicecandidate =
-        async function(event){
-
-            if(!event.candidate){
-                return;
-            }
-
-
-            await sendWebRTCSignal({
-
-                type:
-                    "ice-candidate",
-
-                senderId:
-                    window.myParticipantId,
-
-                targetId:
-                    "administrator",
-
-                participantId:
-                    window.myParticipantId,
-
-                candidate:
-                    event.candidate
-
-            });
-
-        };
-
-
-    /*
-     * Monitor connection.
-     */
-
-    participantPeerConnection.onconnectionstatechange =
-        function(){
-
-            console.log(
-                "PARTICIPANT WEBRTC CONNECTION STATE:",
-                participantPeerConnection.connectionState
-            );
-
-
-            if(
-                participantPeerConnection.connectionState ===
-                "connected"
-            ){
-
-                console.log(
-                    "PARTICIPANT WEBRTC CONNECTED"
-                );
-
-
-                if(connectionStatus){
-
-                    connectionStatus.textContent =
-                        "● Connected";
-
-                    connectionStatus.style.color =
-                        "#62ff62";
-
-                }
-
-            }
-
-
-            if(
-                participantPeerConnection.connectionState ===
-                "failed"
-            ){
-
-                console.error(
-                    "PARTICIPANT WEBRTC CONNECTION FAILED"
-                );
-
-
-                if(connectionStatus){
-
-                    connectionStatus.textContent =
-                        "● Connection failed";
-
-                    connectionStatus.style.color =
-                        "#ff4444";
-
-                }
-
-            }
-
-        };
 
 
     /*
      * The participant does NOT create the initial offer.
      *
-     * Before asking the administrator to create that offer,
-     * make certain this browser's WebRTC signaling channel
-     * has actually reached SUBSCRIBED.
+     * More importantly, an administrator must not guess when
+     * this participant is ready to receive viewer-specific
+     * offers.
      *
-     * This prevents the administrator from sending an offer
-     * before the participant is ready to receive it.
+     * Wait until the participant's Supabase Realtime
+     * signaling channel has confirmed SUBSCRIBED.
      */
 
     while(!webRTCSignalingReady){
@@ -4819,11 +4751,16 @@ async function startParticipantWebRTC(
      * The participant is now:
      *
      * 1. approved,
-     * 2. holding its WebRTC peer connection,
-     * 3. holding its local media tracks, and
+     * 2. holding its local media tracks,
+     * 3. holding any available TURN fallback credentials, and
      * 4. subscribed to the signaling channel.
      *
-     * Tell the administrator that negotiation may begin.
+     * Announce readiness to the shared administrator audience.
+     *
+     * Every authorized administrator browser receives this
+     * readiness announcement. Each administrator then creates
+     * its own receive-only RTCPeerConnection and sends an offer
+     * containing that browser's unique viewerId.
      */
 
     await sendWebRTCSignal({
@@ -4844,7 +4781,7 @@ async function startParticipantWebRTC(
 
 
     console.log(
-        "PARTICIPANT WEBRTC READY SIGNAL SENT:",
+        "PARTICIPANT MULTI-VIEWER WEBRTC READY SIGNAL SENT:",
         window.myParticipantId
     );
 
@@ -5327,6 +5264,223 @@ async function handleMirrorWebRTCSignal(
    PARTICIPANT WEBRTC SIGNAL HANDLER
 ========================================================= */
 
+/*
+ * Create one participant-side RTCPeerConnection for one
+ * authorized viewer browser.
+ *
+ * viewerId identifies the WebRTC transport only.
+ * It does NOT grant administrator authority.
+ *
+ * Authentication and room authorization remain the
+ * administrator-side security boundary.
+ */
+
+async function createParticipantPeerConnectionForViewer(
+    viewerId
+){
+
+    if(!viewerId){
+
+        console.error(
+            "Cannot create participant WebRTC connection without viewerId."
+        );
+
+        return null;
+
+    }
+
+
+    if(!localStream){
+
+        console.error(
+            "Cannot create participant WebRTC connection: localStream does not exist."
+        );
+
+        return null;
+
+    }
+
+
+    /*
+     * TURN credentials are shared by this approved participant
+     * browser. ensureTurnCredentials() reuses the existing
+     * successful/in-flight credential request.
+     */
+
+    const participantTurnReady =
+        await ensureTurnCredentials();
+
+
+    if(!participantTurnReady){
+
+        console.warn(
+            "Participant TURN fallback unavailable for viewer. Continuing with STUN:",
+            viewerId
+        );
+
+    }
+
+
+    const peerConnection =
+        new RTCPeerConnection(
+            rtcConfiguration
+        );
+
+
+    participantPeerConnections.set(
+        viewerId,
+        peerConnection
+    );
+
+
+    /*
+     * Attach the SAME participant camera and microphone tracks
+     * to this viewer's independent WebRTC connection.
+     *
+     * This does not request the physical devices again.
+     */
+
+    localStream
+        .getTracks()
+        .forEach(
+            track => {
+
+                peerConnection.addTrack(
+                    track,
+                    localStream
+                );
+
+            }
+        );
+
+
+    /*
+     * Send participant ICE directly back to the viewer that
+     * owns this connection.
+     */
+
+    peerConnection.onicecandidate =
+        async function(event){
+
+            if(!event.candidate){
+
+                console.log(
+                    "PARTICIPANT ICE GATHERING COMPLETE FOR VIEWER:",
+                    viewerId
+                );
+
+                return;
+
+            }
+
+
+            await sendWebRTCSignal({
+
+                type:
+                    "ice-candidate",
+
+                senderId:
+                    window.myParticipantId,
+
+                targetId:
+                    viewerId,
+
+                participantId:
+                    window.myParticipantId,
+
+                viewerId:
+                    viewerId,
+
+                candidate:
+                    event.candidate
+
+            });
+
+        };
+
+
+    /*
+     * Monitor this viewer's independent transport.
+     */
+
+    peerConnection.onconnectionstatechange =
+        function(){
+
+            console.log(
+                "PARTICIPANT WEBRTC CONNECTION STATE:",
+                viewerId,
+                peerConnection.connectionState
+            );
+
+
+            if(
+                peerConnection.connectionState ===
+                "connected"
+            ){
+
+                console.log(
+                    "PARTICIPANT WEBRTC CONNECTED TO VIEWER:",
+                    viewerId
+                );
+
+
+                if(connectionStatus){
+
+                    connectionStatus.textContent =
+                        "● Connected";
+
+                    connectionStatus.style.color =
+                        "#62ff62";
+
+                }
+
+            }
+
+
+            if(
+                peerConnection.connectionState ===
+                "failed"
+            ){
+
+                console.error(
+                    "PARTICIPANT WEBRTC CONNECTION FAILED:",
+                    viewerId
+                );
+
+
+                /*
+                 * One viewer connection failing does NOT mean
+                 * every participant connection has failed.
+                 *
+                 * Other administrator/auditor transports may
+                 * still be connected, so do not change the
+                 * participant's overall UI to a global failure
+                 * state here.
+                 */
+
+            }
+
+
+            if(
+                peerConnection.connectionState ===
+                "closed"
+            ){
+
+                console.log(
+                    "PARTICIPANT WEBRTC CONNECTION CLOSED:",
+                    viewerId
+                );
+
+            }
+
+        };
+
+
+    return peerConnection;
+
+}
+
+
 async function handleParticipantWebRTCSignal(
     signal
 ){
@@ -5336,8 +5490,13 @@ async function handleParticipantWebRTCSignal(
         signal
     );
 
+
     /*
      * Administrator media control.
+     *
+     * Preserve the existing authorized control workflow
+     * unchanged. Multi-viewer media transport does not alter
+     * camera/microphone authority.
      */
 
     if(
@@ -5354,6 +5513,7 @@ async function handleParticipantWebRTCSignal(
             return;
 
         }
+
 
 if(
     signal.media ===
@@ -5456,6 +5616,7 @@ if(
         );
 
         return;
+
     }
 
 
@@ -5470,6 +5631,7 @@ if(
         );
 
         return;
+
     }
 
 
@@ -5484,6 +5646,7 @@ if(
         );
 
         return;
+
     }
 
 
@@ -5517,20 +5680,126 @@ if(
     );
 
 }
+
         return;
+
     }
+
+
+    /*
+     * From this point forward, media negotiation is
+     * viewer-specific.
+     */
+
+    const viewerId =
+        signal.viewerId;
 
 
     /*
      * Administrator ICE candidate.
      */
 
-if(
-    signal.type ===
-    "ice-candidate"
-){
+    if(
+        signal.type ===
+        "ice-candidate"
+    ){
 
-    if(!signal.candidate){
+        if(!signal.candidate){
+
+            return;
+
+        }
+
+
+        if(!viewerId){
+
+            console.warn(
+                "Participant ignored WebRTC ICE candidate without viewerId."
+            );
+
+            return;
+
+        }
+
+
+        const peerConnection =
+            participantPeerConnections.get(
+                viewerId
+            );
+
+
+        /*
+         * ICE may arrive before this viewer's offer has been
+         * installed as the remote description.
+         *
+         * Queue candidates separately by viewer ID.
+         */
+
+        if(
+            !peerConnection ||
+            !peerConnection.remoteDescription
+        ){
+
+            let pendingCandidates =
+                pendingParticipantIceCandidatesByViewer.get(
+                    viewerId
+                );
+
+
+            if(!pendingCandidates){
+
+                pendingCandidates =
+                    [];
+
+                pendingParticipantIceCandidatesByViewer.set(
+                    viewerId,
+                    pendingCandidates
+                );
+
+            }
+
+
+            pendingCandidates.push(
+                signal.candidate
+            );
+
+
+            console.log(
+                "Queued participant ICE candidate for viewer:",
+                viewerId,
+                "queue length:",
+                pendingCandidates.length
+            );
+
+
+            return;
+
+        }
+
+
+        try{
+
+            await peerConnection.addIceCandidate(
+                signal.candidate
+            );
+
+
+            console.log(
+                "Participant ICE candidate added for viewer:",
+                viewerId
+            );
+
+
+        }catch(error){
+
+            console.error(
+                "PARTICIPANT ICE CANDIDATE ERROR:",
+                viewerId,
+                error
+            );
+
+        }
+
 
         return;
 
@@ -5538,163 +5807,215 @@ if(
 
 
     /*
-     * If the participant peer connection
-     * does not exist yet, save the candidate.
+     * Administrator/viewer offer.
      */
 
-if(
-    !participantPeerConnection ||
-    !participantPeerConnection.remoteDescription
-){
-
-    pendingParticipantIceCandidates.push(
-        signal.candidate
-    );
-
-    console.log(
-        "Queued participant ICE candidate until administrator offer is accepted."
-    );
-
-    return;
-}
-
-
-    try{
-
-        await participantPeerConnection.addIceCandidate(
-            signal.candidate
-        );
-
+    if(
+        signal.type ===
+        "offer"
+    ){
 
         console.log(
-            "Participant ICE candidate added."
+            "PARTICIPANT RECEIVED VIEWER OFFER:",
+            signal
         );
 
 
-    }catch(error){
+        if(!viewerId){
 
-        console.error(
-            "PARTICIPANT ICE CANDIDATE ERROR:",
-            error
-        );
+            console.error(
+                "PARTICIPANT WEBRTC ERROR: viewer offer has no viewerId."
+            );
 
-    }
+            return;
 
-
-    return;
-}
+        }
 
 
-    /*
-     * Administrator's offer.
-     */
+        /*
+         * A refreshed administrator browser receives a new
+         * viewerId.
+         *
+         * If the same viewerId somehow negotiates again, close
+         * only that viewer's previous transport before replacing
+         * it. Other viewers remain untouched.
+         */
 
-if(
-    signal.type ===
-    "offer"
-){
-
-console.log(
-    "PARTICIPANT RECEIVED ADMINISTRATOR OFFER:",
-    signal
-);
-
-if(!participantPeerConnection){
-
-    console.error(
-        "PARTICIPANT WEBRTC ERROR: peer connection was not created before offer."
-    );
-
-    return;
-
-}
+        const existingPeerConnection =
+            participantPeerConnections.get(
+                viewerId
+            );
 
 
-await participantPeerConnection.setRemoteDescription(
-    signal.offer
-);
+        if(existingPeerConnection){
 
-console.log(
-    "Participant administrator offer accepted."
-);
+            console.log(
+                "Replacing participant WebRTC connection for viewer:",
+                viewerId
+            );
 
-/*
- * Add any ICE candidates that arrived
- * before the administrator offer.
- */
 
-if(
-    pendingParticipantIceCandidates.length
-){
+            existingPeerConnection.onicecandidate =
+                null;
 
-    console.log(
-        "Adding queued participant ICE candidates:",
-        pendingParticipantIceCandidates.length
-    );
+            existingPeerConnection.onconnectionstatechange =
+                null;
 
-    for(
-        const candidate
-        of pendingParticipantIceCandidates
-    ){
+
+            existingPeerConnection.close();
+
+
+            participantPeerConnections.delete(
+                viewerId
+            );
+
+        }
+
+
+        const peerConnection =
+            await createParticipantPeerConnectionForViewer(
+                viewerId
+            );
+
+
+        if(!peerConnection){
+
+            console.error(
+                "PARTICIPANT WEBRTC ERROR: could not create connection for viewer:",
+                viewerId
+            );
+
+            return;
+
+        }
+
 
         try{
 
-            await participantPeerConnection.addIceCandidate(
-                candidate
+            await peerConnection.setRemoteDescription(
+                signal.offer
             );
 
+
             console.log(
-                "Queued participant ICE candidate added."
+                "Participant viewer offer accepted:",
+                viewerId
             );
+
+
+            /*
+             * Apply only the ICE candidates belonging to this
+             * viewer.
+             */
+
+            const pendingCandidates =
+                pendingParticipantIceCandidatesByViewer.get(
+                    viewerId
+                ) || [];
+
+
+            if(pendingCandidates.length){
+
+                console.log(
+                    "Adding queued participant ICE candidates for viewer:",
+                    viewerId,
+                    pendingCandidates.length
+                );
+
+
+                for(
+                    const candidate
+                    of pendingCandidates
+                ){
+
+                    try{
+
+                        await peerConnection.addIceCandidate(
+                            candidate
+                        );
+
+
+                        console.log(
+                            "Queued participant ICE candidate added for viewer:",
+                            viewerId
+                        );
+
+
+                    }catch(error){
+
+                        console.error(
+                            "QUEUED PARTICIPANT ICE ERROR:",
+                            viewerId,
+                            error
+                        );
+
+                    }
+
+                }
+
+            }
+
+
+            pendingParticipantIceCandidatesByViewer.delete(
+                viewerId
+            );
+
+
+            const answer =
+                await peerConnection.createAnswer();
+
+
+            await peerConnection.setLocalDescription(
+                answer
+            );
+
+
+            /*
+             * Send the answer directly to the viewer browser
+             * that created this offer.
+             */
+
+            await sendWebRTCSignal({
+
+                type:
+                    "answer",
+
+                senderId:
+                    window.myParticipantId,
+
+                targetId:
+                    viewerId,
+
+                participantId:
+                    window.myParticipantId,
+
+                viewerId:
+                    viewerId,
+
+                answer:
+                    answer
+
+            });
+
+
+            console.log(
+                "Participant WebRTC answer sent to viewer:",
+                viewerId
+            );
+
 
         }catch(error){
 
             console.error(
-                "QUEUED PARTICIPANT ICE ERROR:",
+                "PARTICIPANT VIEWER OFFER ERROR:",
+                viewerId,
                 error
             );
 
         }
 
-    }
 
-    pendingParticipantIceCandidates =
-        [];
-
-}
-
-const answer =
-    await participantPeerConnection.createAnswer();
-
-
-        await participantPeerConnection.setLocalDescription(
-            answer
-        );
-
-
-        await sendWebRTCSignal({
-
-            type:
-                "answer",
-
-            senderId:
-                window.myParticipantId,
-
-            targetId:
-                "administrator",
-
-            participantId:
-                window.myParticipantId,
-
-            answer:
-                answer
-
-        });
-
-
-        console.log(
-            "Participant WebRTC answer sent."
-        );
+        return;
 
     }
 
@@ -6642,17 +6963,51 @@ function closeParticipantWebRTC(
 function showRemovedScreen(){
 
     /*
-     * Close participant WebRTC connection.
+     * Close every participant-side WebRTC connection.
+     *
+     * The participant may now be sending its camera and
+     * microphone to multiple authorized viewer browsers.
+     *
+     * Removal from the conference therefore closes every
+     * viewer-specific transport rather than one generic
+     * administrator connection.
      */
 
-    if(participantPeerConnection){
+    participantPeerConnections.forEach(
+        function(
+            peerConnection,
+            viewerId
+        ){
 
-        participantPeerConnection.close();
+            console.log(
+                "Closing participant WebRTC connection for viewer:",
+                viewerId
+            );
 
-        participantPeerConnection =
-            null;
 
-    }
+            peerConnection.onicecandidate =
+                null;
+
+            peerConnection.onconnectionstatechange =
+                null;
+
+
+            peerConnection.close();
+
+        }
+    );
+
+
+    participantPeerConnections.clear();
+
+
+    /*
+     * ICE candidates queued for viewer connections that never
+     * completed negotiation are no longer valid after removal.
+     */
+
+    pendingParticipantIceCandidatesByViewer.clear();
+
     
     /*
        Stop local camera/microphone.
