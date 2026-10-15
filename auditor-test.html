@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="icon" type="image/png" href="favicon.png">
+
 <title>CCW Conference Audit</title>
 <style>
 *{
@@ -482,75 +485,30 @@ h1{
 
 <section id="conferenceScreen" class="screen">
     <header id="conferenceHeader">
-
         <div>
-            <div class="headerTitle">
-                CCW Conference Audit
-            </div>
-
-            <div class="headerSub">
-                VIEW ONLY - NO PERMISSIONS
-            </div>
+            <div class="headerTitle">CCW Conference Audit</div>
+            <div class="headerSub">VIEW ONLY - NO PERMISSIONS</div>
         </div>
-
-        <div id="connectionStatus">
-            ● Connecting...
-        </div>
-
+        <div id="connectionStatus">● Connecting...</div>
     </header>
 
     <main id="videoArea">
         <div id="videoGrid">
-            <div id="emptyMessage">
-                Waiting for conference video...
-            </div>
+            <div id="emptyMessage">Waiting for Participant</div>
         </div>
     </main>
 
     <footer id="controls">
-
-        <button
-            id="micButton"
-            class="controlButton"
-        >
-            🔇 Mic OFF
-        </button>
-
-        <button
-            id="cameraButton"
-            class="controlButton active"
-        >
-            📷 Camera ON
-        </button>
-
-        <button
-            id="exitButton"
-            class="controlButton exit"
-        >
-            Exit Conference
-        </button>
-
+        <button id="micButton" class="controlButton">🔇 Mic OFF</button>
+        <button id="cameraButton" class="controlButton active">📷 Camera ON</button>
+        <button id="exitButton" class="controlButton exit">Exit Conference</button>
     </footer>
 </section>
 
 <section id="endedScreen" class="screen hidden">
     <div class="card">
-
-        <img
-            src="safe-insight-logo.png"
-            alt="Safe Insight"
-            class="safeInsightLogo"
-        >
-
         <h1>Conference Audit Ended</h1>
-
-        <p
-            class="instructions"
-            id="endedMessage"
-        >
-            You have left the conference.
-        </p>
-
+        <p class="instructions" id="endedMessage">You have left the conference.</p>
     </div>
 </section>
 
@@ -1045,6 +1003,38 @@ function removeEmptyMessage(){
     }
 }
 
+
+function showEmptyMessageIfNeeded(){
+
+    if(
+        videoGrid.querySelector(
+            ".videoTile"
+        )
+    ){
+        return;
+    }
+
+
+    /*
+     * Keep the Auditor conference grid consistent with the
+     * established conference presentation.
+     */
+
+    emptyMessage.textContent =
+        "Waiting for Participant";
+
+
+    if(
+        emptyMessage &&
+        !emptyMessage.parentElement
+    ){
+        videoGrid.appendChild(
+            emptyMessage
+        );
+    }
+}
+
+
 function ensureVideoTile(
     sourceId,
     displayName,
@@ -1171,6 +1161,7 @@ function ensureVideoTile(
     return tile;
 }
 
+
 function attachStreamToTile(
     sourceId,
     stream,
@@ -1225,6 +1216,7 @@ function attachStreamToTile(
         );
 }
 
+
 function refreshLocalTile(){
 
     if(
@@ -1244,6 +1236,7 @@ function refreshLocalTile(){
     );
 }
 
+
 function removeVideoTile(
     sourceId
 ){
@@ -1261,8 +1254,21 @@ function removeVideoTile(
         );
 
     if(tile){
+
+        const video =
+            tile.querySelector(
+                "video"
+            );
+
+        if(video){
+            video.srcObject =
+                null;
+        }
+
         tile.remove();
     }
+
+    showEmptyMessageIfNeeded();
 }
 
 /* =========================================================
@@ -1703,6 +1709,50 @@ async function announceAuditorMediaReady(){
    AUDITOR AS RECEIVE-ONLY VIEWER
 ========================================================= */
 
+function releaseViewerPeerConnection(
+    sourceId,
+    removeTile
+){
+
+    const peerConnection =
+        viewerPeerConnections.get(
+            sourceId
+        );
+
+    if(peerConnection){
+
+        peerConnection.ontrack =
+            null;
+
+        peerConnection.onicecandidate =
+            null;
+
+        peerConnection.onconnectionstatechange =
+            null;
+
+        peerConnection.close();
+
+        viewerPeerConnections.delete(
+            sourceId
+        );
+    }
+
+    viewerRemoteStreams.delete(
+        sourceId
+    );
+
+    pendingViewerIceCandidates.delete(
+        sourceId
+    );
+
+    if(removeTile){
+        removeVideoTile(
+            sourceId
+        );
+    }
+}
+
+
 async function createViewerPeerConnection(
     sourceId,
     displayName,
@@ -1734,7 +1784,11 @@ async function createViewerPeerConnection(
     }
 
     if(existing){
-        existing.close();
+
+        releaseViewerPeerConnection(
+            sourceId,
+            true
+        );
     }
 
     await ensureTurnCredentials();
@@ -1884,6 +1938,37 @@ async function createViewerPeerConnection(
 
                 connectionStatus.style.color =
                     "#52d273";
+
+                return;
+            }
+
+            if(
+                [
+                    "failed",
+                    "closed"
+                ].includes(
+                    peerConnection.connectionState
+                )
+            ){
+
+                /*
+                 * Only release this source if this is still
+                 * the current peer connection stored for it.
+                 *
+                 * A stale connection event must never tear
+                 * down a newer replacement connection.
+                 */
+
+                if(
+                    viewerPeerConnections.get(
+                        sourceId
+                    ) === peerConnection
+                ){
+                    releaseViewerPeerConnection(
+                        sourceId,
+                        true
+                    );
+                }
             }
         };
 
@@ -2005,6 +2090,29 @@ async function handleViewerSignal(
    CONFERENCE RECORDS
 ========================================================= */
 
+function isAuditorVisibleConferenceRole(
+    role
+){
+
+    /*
+     * An Auditor may observe only conference roles that
+     * explicitly belong in the Auditor video population.
+     *
+     * Keep this rule here rather than assuming every future
+     * conference_participants role should automatically
+     * become visible to Auditors.
+     *
+     * Administrator media uses its own explicit signaling
+     * path and is therefore intentionally not represented
+     * by this database-role check.
+     */
+
+    return (
+        role === "participant" ||
+        role === "auditor"
+    );
+}
+
 async function connectToExistingConferenceSources(){
 
     if(
@@ -2061,6 +2169,25 @@ async function connectToExistingConferenceSources(){
             record.id ===
             auditorRecord.id
         ){
+            continue;
+        }
+
+        if(
+            !isAuditorVisibleConferenceRole(
+                record.role
+            )
+        ){
+            console.log(
+                "Auditor viewer skipped non-visible conference role:",
+                {
+                    id:
+                        record.id,
+
+                    role:
+                        record.role
+                }
+            );
+
             continue;
         }
 
@@ -2126,7 +2253,10 @@ function subscribeToConferenceRecords(){
 
                     if(
                         record?.status ===
-                        "approved"
+                            "approved" &&
+                        isAuditorVisibleConferenceRole(
+                            record.role
+                        )
                     ){
                         await createViewerPeerConnection(
                             record.id,
@@ -2136,6 +2266,12 @@ function subscribeToConferenceRecords(){
 
                         return;
                     }
+
+                    /*
+                     * A record that is no longer approved OR
+                     * no longer belongs to an Auditor-visible role
+                     * must not retain media in the Auditor interface.
+                     */
 
                     const removedId =
                         record?.id ||
@@ -2149,7 +2285,15 @@ function subscribeToConferenceRecords(){
                             );
 
                         if(peer){
+
+                            peer.onicecandidate =
+                                null;
+
+                            peer.onconnectionstatechange =
+                                null;
+
                             peer.close();
+
                             viewerPeerConnections.delete(
                                 removedId
                             );
@@ -2175,6 +2319,94 @@ function subscribeToConferenceRecords(){
 /* =========================================================
    AUDITOR STATUS
 ========================================================= */
+
+function synchronizeAuditorMediaState(
+    record
+){
+
+    if(
+        !record ||
+        record.role !== "auditor" ||
+        !localStream
+    ){
+        return;
+    }
+
+
+    /*
+     * The database is authoritative.
+     *
+     * The Auditor may operate their own camera and
+     * microphone, but an Administrator may also change
+     * those states.
+     *
+     * Realtime therefore reconciles the local MediaStream
+     * with the authoritative conference participant record.
+     */
+
+    localStream
+        .getVideoTracks()
+        .forEach(
+            track => {
+                track.enabled =
+                    !!record.camera_on;
+            }
+        );
+
+
+    localStream
+        .getAudioTracks()
+        .forEach(
+            track => {
+                track.enabled =
+                    !!record.mic_on;
+            }
+        );
+
+
+    cameraButton.textContent =
+        record.camera_on
+        ? "📷 Camera ON"
+        : "📷 Camera OFF";
+
+    cameraButton.classList.toggle(
+        "active",
+        !!record.camera_on
+    );
+
+
+    micButton.textContent =
+        record.mic_on
+        ? "🎤 Mic ON"
+        : "🔇 Mic OFF";
+
+    micButton.classList.toggle(
+        "active",
+        !!record.mic_on
+    );
+
+
+    /*
+     * An Administrator microphone lock prevents the
+     * Auditor from turning their microphone back on.
+     *
+     * The button remains visible so the Auditor can see
+     * their own microphone state, but it cannot override
+     * the Administrator's lock.
+     */
+
+    micButton.disabled =
+        !!record.mic_locked;
+
+    micButton.title =
+        record.mic_locked
+        ? "Microphone locked by conference administrator"
+        : "";
+
+
+    refreshLocalTile();
+}
+
 
 function subscribeToAuditorStatus(
     participantId
@@ -2218,27 +2450,56 @@ function subscribeToAuditorStatus(
                         record
                     );
 
+
                     /*
                      * Role is checked as well as status.
                      * An approved ordinary participant record must
                      * never become an Auditor interface merely
                      * because its ID/credential was supplied here.
                      */
+
                     if(
                         record.status ===
                             "approved" &&
                         record.role ===
                             "auditor"
                     ){
+
+                        const wasAlreadyInConference =
+                            auditorRecord?.status ===
+                                "approved" &&
+                            conferenceScreen.style.display ===
+                                "flex";
+
                         auditorRecord =
                             record;
 
                         saveAuditorSession();
 
-                        await enterAuditConference();
+                        synchronizeAuditorMediaState(
+                            record
+                        );
+
+
+                        /*
+                         * Only the transition INTO approved should
+                         * perform conference entry.
+                         *
+                         * Later approved → approved updates are
+                         * ordinary camera/microphone/lock changes
+                         * and must not restart WebRTC or repeat
+                         * conference-entry work.
+                         */
+
+                        if(
+                            !wasAlreadyInConference
+                        ){
+                            await enterAuditConference();
+                        }
 
                         return;
                     }
+
 
                     if(
                         record.status ===
@@ -2266,6 +2527,7 @@ function subscribeToAuditorStatus(
 
                         return;
                     }
+
 
                     if(
                         record.status ===
@@ -2482,7 +2744,22 @@ async function restoreAuditorSession(){
     window.myParticipantId =
         data.id;
 
+
+    /*
+     * Browser media acquisition establishes the physical tracks.
+     * The restored database record then establishes whether those
+     * tracks are actually permitted to be active.
+     *
+     * This prevents a browser refresh from accidentally overriding
+     * an existing Administrator camera/microphone state.
+     */
+
     await acquireLocalMedia();
+
+    synchronizeAuditorMediaState(
+        auditorRecord
+    );
+
 
     initializeWebRTCSignaling();
 
@@ -2510,6 +2787,22 @@ async function enterAuditConference(){
     ){
         return;
     }
+
+    /*
+     * The approved database record is authoritative.
+     *
+     * Apply its camera, microphone, and microphone-lock state
+     * before this Auditor enters the conference or advertises
+     * media to any authorized viewer.
+     *
+     * This covers both:
+     * - a newly approved Auditor, and
+     * - an approved Auditor restoring an existing session.
+     */
+
+    synchronizeAuditorMediaState(
+        auditorRecord
+    );
 
     joinScreen.classList.add(
         "hidden"
@@ -2572,15 +2865,40 @@ micButton.addEventListener(
             return;
         }
 
-        const tracks =
-            localStream.getAudioTracks();
 
-        if(!tracks.length){
+        /*
+         * The database record is authoritative.
+         *
+         * Do not infer the requested state from the local
+         * MediaStream because an Administrator may have
+         * changed microphone state independently.
+         */
+
+        const requestedMicOn =
+            !auditorRecord.mic_on;
+
+
+        /*
+         * A locked microphone may not be turned on by the
+         * Auditor.
+         *
+         * The backend remains the final authority, but this
+         * prevents sending a request that we already know
+         * cannot be honored.
+         */
+
+        if(
+            requestedMicOn &&
+            auditorRecord.mic_locked
+        ){
+
+            console.warn(
+                "Auditor microphone is locked by the conference administrator."
+            );
+
             return;
         }
 
-        const requestedMicOn =
-            !tracks[0].enabled;
 
         const {
             error
@@ -2609,20 +2927,17 @@ micButton.addEventListener(
             return;
         }
 
-        tracks.forEach(
-            track => {
-                track.enabled =
-                    requestedMicOn;
-            }
-        );
 
-        micButton.textContent =
-            requestedMicOn
-            ? "🎤 Mic ON"
-            : "🔇 Mic OFF";
+        /*
+         * Do not directly change the MediaStream here.
+         *
+         * The successful database update returns through
+         * the Auditor status subscription. That authoritative
+         * record is applied by synchronizeAuditorMediaState().
+         */
 
-        micButton.classList.toggle(
-            "active",
+        console.log(
+            "Auditor microphone change requested:",
             requestedMicOn
         );
     }
@@ -2644,15 +2959,18 @@ cameraButton.addEventListener(
             return;
         }
 
-        const tracks =
-            localStream.getVideoTracks();
 
-        if(!tracks.length){
-            return;
-        }
+        /*
+         * The database record is authoritative.
+         *
+         * The Auditor requests the opposite of the current
+         * authoritative camera state. Realtime then applies
+         * the accepted state to the local MediaStream.
+         */
 
         const requestedCameraOn =
-            !tracks[0].enabled;
+            !auditorRecord.camera_on;
+
 
         const {
             error
@@ -2681,24 +2999,19 @@ cameraButton.addEventListener(
             return;
         }
 
-        tracks.forEach(
-            track => {
-                track.enabled =
-                    requestedCameraOn;
-            }
-        );
 
-        cameraButton.textContent =
-            requestedCameraOn
-            ? "📷 Camera ON"
-            : "📷 Camera OFF";
+        /*
+         * Do not directly change the MediaStream here.
+         *
+         * synchronizeAuditorMediaState() applies the
+         * authoritative database result when Realtime
+         * delivers the updated participant record.
+         */
 
-        cameraButton.classList.toggle(
-            "active",
+        console.log(
+            "Auditor camera change requested:",
             requestedCameraOn
         );
-
-        refreshLocalTile();
     }
 );
 
@@ -2760,25 +3073,54 @@ async function endAuditConference(
     message
 ){
 
-    viewerPeerConnections.forEach(
-        peerConnection => {
-            peerConnection.close();
+    /*
+     * Tear down every receive-only viewer connection.
+     *
+     * Use the shared release helper so tracks, ICE queues,
+     * streams, and video tiles are cleaned consistently.
+     */
+
+    Array.from(
+        viewerPeerConnections.keys()
+    ).forEach(
+        sourceId => {
+
+            releaseViewerPeerConnection(
+                sourceId,
+                true
+            );
         }
     );
 
-    viewerPeerConnections.clear();
+
+    /*
+     * Tear down every connection publishing this Auditor
+     * to an authorized viewer.
+     */
 
     sourcePeerConnections.forEach(
         peerConnection => {
+
+            peerConnection.onicecandidate =
+                null;
+
+            peerConnection.onconnectionstatechange =
+                null;
+
             peerConnection.close();
         }
     );
 
     sourcePeerConnections.clear();
 
-    pendingViewerIceCandidates.clear();
     pendingSourceIceCandidates.clear();
-    viewerRemoteStreams.clear();
+
+    visibleConferenceRecords.clear();
+
+
+    /*
+     * Stop this device's camera and microphone.
+     */
 
     if(localStream){
 
@@ -2786,6 +3128,7 @@ async function endAuditConference(
             .getTracks()
             .forEach(
                 track => {
+
                     track.stop();
                 }
             );
@@ -2793,6 +3136,75 @@ async function endAuditConference(
 
     localStream =
         null;
+
+
+    /*
+     * Audit authority has ended.
+     *
+     * Remove every Realtime subscription associated with
+     * this Auditor session. Merely hiding the interface is
+     * not sufficient cleanup.
+     */
+
+    if(statusChannel){
+
+        await supabaseClient.removeChannel(
+            statusChannel
+        );
+
+        statusChannel =
+            null;
+    }
+
+
+    if(conferenceChannel){
+
+        await supabaseClient.removeChannel(
+            conferenceChannel
+        );
+
+        conferenceChannel =
+            null;
+    }
+
+
+    if(webrtcSignalingChannel){
+
+        await supabaseClient.removeChannel(
+            webrtcSignalingChannel
+        );
+
+        webrtcSignalingChannel =
+            null;
+    }
+
+    webRTCSignalingReady =
+        false;
+
+
+    /*
+     * The ended page no longer retains an active Auditor
+     * identity or credential in runtime state.
+     *
+     * Persistent session storage has already been cleared
+     * by the Leave/Remove workflow before arriving here.
+     */
+
+    auditorCredential =
+        null;
+
+    auditorRecord =
+        null;
+
+    window.myParticipantId =
+        null;
+
+    turnCredentialsReady =
+        false;
+
+    turnCredentialsPromise =
+        null;
+
 
     conferenceScreen.style.display =
         "none";
