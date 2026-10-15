@@ -7893,10 +7893,16 @@ function updateAdministratorParticipant(participant){
        created_at remains the authoritative time this
        participant was first added to the conference.
 
+       role remains the authoritative role assigned by
+       the database. The administrator interface must
+       preserve that fact so later presentation and
+       capability decisions can distinguish an Auditor
+       from an ordinary participant.
+
        Every Realtime UPDATE contains the database row, so
-       carry that original timestamp into the administrator's
-       local participant object along with the current media
-       state.
+       carry those authoritative values into the
+       administrator's local participant object along with
+       the current media state.
     */
 
     if(
@@ -7911,6 +7917,9 @@ function updateAdministratorParticipant(participant){
             name:
                 participant.participant_name,
 
+            role:
+                participant.role,
+
             createdAt:
                 participant.created_at,
 
@@ -7924,7 +7933,6 @@ function updateAdministratorParticipant(participant){
                 participant.mic_locked
 
         };
-
 
         if(index === -1){
 
@@ -8022,7 +8030,7 @@ async function allowParticipant(id){
 
        IMPORTANT:
        The waiting-room wrapper contains id/name plus the
-       original Supabase row in databaseRecord. Camera,
+       original Supabase row in databaseRecord. Role, camera,
        microphone, microphone-lock state, and original
        created_at timestamp therefore come from databaseRecord
        rather than from the wrapper itself.
@@ -8054,6 +8062,9 @@ async function allowParticipant(id){
        the authoritative participant values that arrived
        from Supabase.
 
+       role remains the authoritative database role assigned
+       when the conference participant was created.
+
        createdAt remains the original database created_at
        value. Approval does not establish a new "Added" time.
     */
@@ -8065,6 +8076,9 @@ async function allowParticipant(id){
 
         name:
             waitingParticipant.name,
+
+        role:
+            waitingParticipant.databaseRecord.role,
 
         createdAt:
             waitingParticipant.databaseRecord.created_at,
@@ -8085,6 +8099,9 @@ async function allowParticipant(id){
         "Approved participant media state:",
         participant.id,
         {
+            role:
+                participant.role,
+
             cameraOn:
                 participant.cameraOn,
 
@@ -8808,11 +8825,51 @@ function renderWaitingParticipants(){
                 : "Unknown";
 
 
+            /*
+             * Auditor identity comes from the authoritative
+             * database role.
+             *
+             * A normal participant receives no additional
+             * label and therefore preserves the existing
+             * Waiting Room presentation.
+             *
+             * An Auditor is deliberately identified BEFORE
+             * the administrator decides whether to admit them.
+             */
+
+            const isAuditor =
+                participant.databaseRecord?.role ===
+                "auditor";
+
+
+            const auditorLabel =
+                isAuditor
+                ? `
+                    <div style="
+                        display:inline-block;
+                        margin:2px 0 10px;
+                        padding:5px 9px;
+                        border:2px solid #e51b23;
+                        border-radius:6px;
+                        color:#e51b23;
+                        background:#fff;
+                        font-size:11px;
+                        font-weight:800;
+                        letter-spacing:.4px;
+                    ">
+                        AUDITOR — VIEW ONLY
+                    </div>
+                `
+                : "";
+
+
             div.innerHTML = `
 
                 <div class="waitingParticipantName">
                     ${escapeHtml(participant.name)}
                 </div>
+
+                ${auditorLabel}
 
                 <div style="
                     font-size:11px;
@@ -8990,45 +9047,59 @@ function renderParticipants(){
                 : "Unknown";
 
 
-            div.innerHTML = `
+            /*
+             * The authoritative participant role determines
+             * which administrator controls belong here.
+             *
+             * Ordinary participants retain the existing
+             * administrator controls unchanged.
+             *
+             * Auditors are observation participants. They
+             * control their own camera and microphone from
+             * the Auditor interface, so the administrator
+             * receives no camera, microphone, or microphone
+             * lock controls for them.
+             *
+             * The administrator retains Remove authority.
+             */
 
-                <div class="participantName">
-                    ${escapeHtml(participant.name)}
-                </div>
+            const isAuditor =
+                participant.role ===
+                "auditor";
 
-                <div style="
-                    font-size:11px;
-                    color:#aaa;
-                    margin-bottom:4px;
-                ">
-                    Added:
-                    ${escapeHtml(addedText)}
-                </div>
 
-                <div style="
-                    font-size:11px;
-                    color:#aaa;
-                    margin-bottom:8px;
-                ">
+            const auditorLabel =
+                isAuditor
+                ? `
+                    <div style="
+                        display:inline-block;
+                        margin:2px 0 8px;
+                        padding:5px 9px;
+                        border:2px solid #e51b23;
+                        border-radius:6px;
+                        color:#e51b23;
+                        background:#fff;
+                        font-size:11px;
+                        font-weight:800;
+                        letter-spacing:.4px;
+                    ">
+                        AUDITOR — VIEW ONLY
+                    </div>
+                `
+                : "";
 
-                    Camera:
-                    ${participant.cameraOn ? "ON" : "OFF"}
 
-                    &nbsp;&nbsp;
-
-                    Mic:
-                    ${participant.micOn ? "ON" : "OFF"}
-
-                    ${
-                        participant.micLocked
-                        ? " 🔒"
-                        : ""
-                    }
-
-                </div>
-
-                <div class="controlRow">
-
+            const participantControls =
+                isAuditor
+                ? `
+                    <button
+                        class="danger"
+                        onclick="removeParticipant('${participant.id}')"
+                    >
+                        Remove
+                    </button>
+                `
+                : `
                     <button
                         onclick="toggleParticipantCamera('${participant.id}')"
                     >
@@ -9065,7 +9136,51 @@ function renderParticipants(){
                     >
                         Remove
                     </button>
+                `;
 
+
+            div.innerHTML = `
+
+                <div class="participantName">
+                    ${escapeHtml(participant.name)}
+                </div>
+
+                ${auditorLabel}
+
+                <div style="
+                    font-size:11px;
+                    color:#aaa;
+                    margin-bottom:4px;
+                ">
+                    Added:
+                    ${escapeHtml(addedText)}
+                </div>
+
+                <div style="
+                    font-size:11px;
+                    color:#aaa;
+                    margin-bottom:8px;
+                ">
+
+                    Camera:
+                    ${participant.cameraOn ? "ON" : "OFF"}
+
+                    &nbsp;&nbsp;
+
+                    Mic:
+                    ${participant.micOn ? "ON" : "OFF"}
+
+                    ${
+                        !isAuditor &&
+                        participant.micLocked
+                        ? " 🔒"
+                        : ""
+                    }
+
+                </div>
+
+                <div class="controlRow">
+                    ${participantControls}
                 </div>
 
             `;
@@ -10826,6 +10941,9 @@ function renderAdminChatRecipients(){
 
     /*
      * Chat All Users
+     *
+     * "All Users" means all chat-capable users.
+     * Auditors intentionally have no chat capability.
      */
     const allLabel =
         document.createElement("div");
@@ -10870,82 +10988,91 @@ function renderAdminChatRecipients(){
 
 
     /*
-     * Individual active participants
+     * Individual active chat-capable participants.
+     *
+     * Auditors are intentionally excluded. Their role
+     * permits conference observation but does not create
+     * chat capability.
      */
-    participants.forEach(
-        function(participant){
+    participants
+        .filter(
+            participant =>
+                participant.role !== "auditor"
+        )
+        .forEach(
+            function(participant){
 
-            const id =
-                String(participant.id);
+                const id =
+                    String(participant.id);
 
-            const messages =
-                adminChatThreads[id] || [];
+                const messages =
+                    adminChatThreads[id] || [];
 
-            const label =
-                document.createElement("div");
+                const label =
+                    document.createElement("div");
 
-            label.className =
-                "chatRecipient" +
-                (
-                    openAdminChatThread === id
-                        ? " selected"
-                        : ""
+                label.className =
+                    "chatRecipient" +
+                    (
+                        openAdminChatThread === id
+                            ? " selected"
+                            : ""
+                    );
+
+                const name =
+                    document.createElement("span");
+
+                name.className =
+                    "chatRecipientName";
+
+                name.textContent =
+                    participant.name;
+
+                const badge =
+                    document.createElement("span");
+
+                badge.className =
+                    "chatThreadBadge";
+
+                badge.textContent =
+                    messages.length;
+
+                badge.title =
+                    messages.length +
+                    " message" +
+                    (
+                        messages.length === 1
+                            ? ""
+                            : "s"
+                    );
+
+                label.appendChild(
+                    name
                 );
 
-            const name =
-                document.createElement("span");
-
-            name.className =
-                "chatRecipientName";
-
-            name.textContent =
-                participant.name;
-
-            const badge =
-                document.createElement("span");
-
-            badge.className =
-                "chatThreadBadge";
-
-            badge.textContent =
-                messages.length;
-
-            badge.title =
-                messages.length +
-                " message" +
-                (
-                    messages.length === 1
-                        ? ""
-                        : "s"
+                label.appendChild(
+                    badge
                 );
 
-            label.appendChild(
-                name
-            );
+                label.addEventListener(
+                    "click",
+                    function(){
 
-            label.appendChild(
-                badge
-            );
+                        openAdminChatThread =
+                            id;
 
-            label.addEventListener(
-                "click",
-                function(){
+                        renderAdminChatRecipients();
+                        renderAdminChatMessages();
 
-                    openAdminChatThread =
-                        id;
+                    }
+                );
 
-                    renderAdminChatRecipients();
-                    renderAdminChatMessages();
+                adminChatRecipients.appendChild(
+                    label
+                );
 
-                }
-            );
-
-            adminChatRecipients.appendChild(
-                label
-            );
-
-        }
-    );
+            }
+        );
 
 }
 
@@ -10967,6 +11094,26 @@ function renderAdminChatMessages(){
 
         Object.keys(adminChatThreads).forEach(
             function(id){
+
+                /*
+                 * Defensive role check:
+                 * Auditor threads do not belong in Admin chat,
+                 * even if stale browser state somehow contains
+                 * an old thread under the same participant ID.
+                 */
+                const participant =
+                    participants.find(
+                        p =>
+                            String(p.id) ===
+                            String(id)
+                    );
+
+                if(
+                    participant?.role ===
+                    "auditor"
+                ){
+                    return;
+                }
 
                 const messages =
                     adminChatThreads[id] || [];
@@ -10991,7 +11138,6 @@ function renderAdminChatMessages(){
                 '<div class="chatThreadEmpty">No messages yet.</div>';
 
             return;
-
         }
 
         allMessages.forEach(
@@ -11017,6 +11163,28 @@ function renderAdminChatMessages(){
     /*
      * INDIVIDUAL PARTICIPANT
      */
+    const selectedParticipant =
+        participants.find(
+            participant =>
+                String(participant.id) ===
+                String(openAdminChatThread)
+        );
+
+    if(
+        selectedParticipant?.role ===
+        "auditor"
+    ){
+
+        openAdminChatThread =
+            "ALL";
+
+        renderAdminChatRecipients();
+        renderAdminChatMessages();
+
+        return;
+    }
+
+
     const messages =
         adminChatThreads[openAdminChatThread] || [];
 
@@ -11026,7 +11194,6 @@ function renderAdminChatMessages(){
             '<div class="chatThreadEmpty">No conversation with this participant yet.</div>';
 
         return;
-
     }
 
     messages.forEach(
@@ -11072,7 +11239,6 @@ clearBrowserTabAlert();
 
             adminChatPanel.style.display =
                 "flex";
-
         }
 
     }
@@ -11094,12 +11260,22 @@ adminChatSend.addEventListener(
 
         /*
          * CHAT ALL USERS
+         *
+         * Send only to chat-capable participants.
+         * Auditors intentionally receive no chat.
          */
         if(openAdminChatThread === "ALL"){
 
             for(
                 const participant of participants
             ){
+
+                if(
+                    participant.role ===
+                    "auditor"
+                ){
+                    continue;
+                }
 
                 const id =
                     String(participant.id);
@@ -11141,6 +11317,39 @@ adminChatSend.addEventListener(
 
             const id =
                 String(openAdminChatThread);
+
+            const participant =
+                participants.find(
+                    p =>
+                        String(p.id) ===
+                        id
+                );
+
+            /*
+             * Defensive capability boundary.
+             *
+             * The UI does not offer an Auditor chat thread,
+             * but do not rely on presentation alone.
+             */
+            if(
+                !participant ||
+                participant.role ===
+                    "auditor"
+            ){
+
+                console.warn(
+                    "ADMIN CHAT BLOCKED: recipient is not chat-capable.",
+                    id
+                );
+
+                openAdminChatThread =
+                    "ALL";
+
+                renderAdminChatRecipients();
+                renderAdminChatMessages();
+
+                return;
+            }
 
             await chatChannel.send({
                 type:"broadcast",
@@ -11640,6 +11849,9 @@ async function loadConferenceParticipants(){
 
                     name:
                         participant.participant_name,
+
+                    role:
+                        participant.role,
 
                     createdAt:
                         participant.created_at,
