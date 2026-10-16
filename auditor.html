@@ -2626,15 +2626,40 @@ function synchronizeAuditorMediaState(
     );
 
 
-    micButton.textContent =
-        record.mic_on
-        ? "🎤 Mic ON"
-        : "🔇 Mic OFF";
+    /*
+     * Microphone presentation has three authoritative states:
+     *
+     *     ON
+     *     OFF
+     *     LOCKED
+     *
+     * A microphone lock is intentionally shown explicitly so
+     * the Auditor understands that the microphone was disabled
+     * by the conference Administrator rather than simply being
+     * turned off locally.
+     */
 
-    micButton.classList.toggle(
-        "active",
-        !!record.mic_on
-    );
+    if(record.mic_locked){
+
+        micButton.textContent =
+            "🔒 Mic LOCKED";
+
+        micButton.classList.remove(
+            "active"
+        );
+
+    }else{
+
+        micButton.textContent =
+            record.mic_on
+            ? "🎤 Mic ON"
+            : "🔇 Mic OFF";
+
+        micButton.classList.toggle(
+            "active",
+            !!record.mic_on
+        );
+    }
 
 
     /*
@@ -2642,7 +2667,7 @@ function synchronizeAuditorMediaState(
      * Auditor from turning their microphone back on.
      *
      * The button remains visible so the Auditor can see
-     * their own microphone state, but it cannot override
+     * that the microphone is LOCKED, but it cannot override
      * the Administrator's lock.
      */
 
