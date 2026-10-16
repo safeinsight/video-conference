@@ -182,54 +182,76 @@ h1{
 #conferenceScreen{
     display:none;
     flex-direction:column;
-    height:100vh;
-    background:#0b0b0b;
+    width:100%;
+    height:100dvh;
+    background:#000;
     color:#fff;
+    overflow:hidden;
 }
 
 #conferenceHeader{
-    flex:0 0 auto;
+    height:72px;
+    min-height:72px;
     display:flex;
     align-items:center;
     justify-content:space-between;
     gap:16px;
-    padding:12px 18px;
-    background:#181818;
-    border-bottom:1px solid #333;
+    padding:8px 16px;
+    background:#000;
+    border-bottom:2px solid #333;
+}
+
+.conferenceHeaderLogo{
+    height:54px;
+    width:auto;
+    object-fit:contain;
+}
+
+.auditHeaderText{
+    text-align:right;
 }
 
 .headerTitle{
-    font-size:20px;
-    font-weight:800;
+    font-size:22px;
+    line-height:1.1;
+    font-weight:bold;
+    color:#fff;
 }
 
 .headerSub{
-    margin-top:3px;
+    display:inline-block;
+    margin-top:5px;
+    padding:4px 8px;
+    border:2px solid #e51b23;
+    border-radius:5px;
     color:#e51b23;
+    background:#000;
     font-size:12px;
+    line-height:1;
     font-weight:800;
-    letter-spacing:.5px;
+    letter-spacing:.4px;
 }
 
 #connectionStatus{
-    color:#ddd;
-    font-size:14px;
-    white-space:nowrap;
+    display:none;
 }
 
 #videoArea{
     flex:1;
     min-height:0;
-    overflow:auto;
-    padding:14px;
+    overflow:hidden;
+    padding:0;
+    background:#000;
 }
 
 #videoGrid{
+    width:100%;
+    height:100%;
     display:grid;
     grid-template-columns:repeat(4,minmax(0,1fr));
-    gap:12px;
-    width:100%;
-    min-height:100%;
+    grid-template-rows:repeat(3,minmax(0,1fr));
+    gap:1px;
+    background:#333;
 }
 
 .videoTile{
@@ -237,18 +259,20 @@ h1{
     display:flex;
     align-items:center;
     justify-content:center;
-    min-height:190px;
+    min-width:0;
+    min-height:0;
     overflow:hidden;
-    border:1px solid #333;
-    border-radius:12px;
-    background:#000;
+    border:0;
+    border-radius:0;
+    background:#111;
 }
 
 .videoTile video{
     width:100%;
     height:100%;
     object-fit:cover;
-    background:#000;
+    display:block;
+    background:#111;
 }
 
 .videoTile.localTile video{
@@ -262,9 +286,9 @@ h1{
     align-items:center;
     justify-content:center;
     padding:18px;
-    background:#171717;
-    color:#aaa;
-    font-size:15px;
+    background:#151515;
+    color:#888;
+    font-size:16px;
     text-align:center;
 }
 
@@ -274,54 +298,156 @@ h1{
     bottom:8px;
     max-width:calc(100% - 16px);
     overflow:hidden;
-    padding:6px 9px;
-    border-radius:7px;
-    background:rgba(0,0,0,.72);
-    font-size:13px;
-    font-weight:700;
+    padding:5px 9px;
+    border-radius:4px;
+    background:rgba(0,0,0,.75);
+    color:#fff;
+    font-size:14px;
     text-overflow:ellipsis;
     white-space:nowrap;
+    z-index:5;
 }
 
 .tileRole{
     margin-left:5px;
     color:#e51b23;
     font-size:11px;
+    font-weight:800;
 }
 
 #controls{
-    flex:0 0 auto;
+    min-height:64px;
+    flex:0 0 64px;
     display:flex;
     align-items:center;
     justify-content:center;
     gap:10px;
-    flex-wrap:wrap;
-    padding:12px;
-    background:#181818;
-    border-top:1px solid #333;
+    padding:8px 12px;
+    background:#000;
+    border-top:2px solid #333;
 }
 
 .controlButton{
-    padding:12px 18px;
-    background:#333;
+    min-width:150px;
+    border:0;
+    border-radius:6px;
+    padding:10px 16px;
+    background:#777;
     color:#fff;
-    font-size:15px;
+    font-size:14px;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+.controlButton:hover{
+    background:#555;
 }
 
 .controlButton.active{
-    background:#e51b23;
+    background:#147a14;
     color:#fff;
 }
 
 .controlButton.exit{
-    background:#9d1c1c;
+    background:#ff0000;
+    color:#fff;
+}
+
+.controlButton.exit:hover{
+    background:#555;
 }
 
 #emptyMessage{
     grid-column:1/-1;
-    padding:30px;
-    color:#888;
+    align-self:center;
+    justify-self:center;
+    padding:10px 14px;
+    border-radius:4px;
+    background:#000;
+    color:#fff;
+    font-size:16px;
+    font-weight:bold;
     text-align:center;
+}
+
+/* =========================================================
+   CUSTOM ALERT / CONFIRM MODALS
+========================================================= */
+
+#customAlertOverlay{
+    position:fixed;
+    inset:0;
+    z-index:5000;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    background:rgba(0,0,0,.72);
+}
+
+#customAlertOverlay.show{
+    display:flex;
+}
+
+.customAlertBox{
+    width:min(92vw,760px);
+    min-height:360px;
+    padding:34px 42px 30px;
+    background:#e6e6e6;
+    color:#000;
+    border:6px solid #ed1c24;
+    border-radius:64px;
+    box-shadow:0 18px 60px rgba(0,0,0,.55);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:space-between;
+    text-align:center;
+}
+
+.customAlertLogo{
+    width:min(300px,55%);
+    max-height:100px;
+    object-fit:contain;
+    margin:0 auto 18px;
+}
+
+#customAlertMessage{
+    width:100%;
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:10px 12px 24px;
+    font-size:clamp(22px,3vw,42px);
+    line-height:1.2;
+    font-weight:bold;
+    white-space:pre-wrap;
+    overflow-wrap:anywhere;
+}
+
+.customAlertButtons{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:14px;
+    width:100%;
+}
+
+.customAlertButton{
+    min-width:120px;
+    padding:11px 24px;
+    border:0;
+    border-radius:7px;
+    background:#000;
+    color:#fff;
+    font-size:16px;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+.customAlertButton:hover{
+    background:#555;
 }
 
 /*
@@ -330,41 +456,41 @@ h1{
  * =========================================================
  */
 
-@media(max-width:1050px){
+@media(max-width:900px){
+
+    #conferenceHeader{
+        height:60px;
+        min-height:60px;
+    }
+
+    .conferenceHeaderLogo{
+        height:42px;
+    }
+
+    .headerTitle{
+        font-size:18px;
+    }
 
     #videoGrid{
         grid-template-columns:repeat(3,minmax(0,1fr));
+        grid-template-rows:none;
+        grid-auto-rows:minmax(150px,1fr);
+        overflow-y:auto;
+    }
+
+    #controls{
+        min-height:60px;
+        flex-basis:60px;
+    }
+
+    .controlButton{
+        min-width:120px;
+        padding:9px 10px;
+        font-size:12px;
     }
 }
 
-@media(max-width:760px){
-
-    .card{
-        padding:38px 28px 34px;
-    }
-
-    .safeInsightLogo{
-        margin-bottom:34px;
-    }
-
-    h1{
-        font-size:34px;
-    }
-
-    #videoGrid{
-        grid-template-columns:repeat(2,minmax(0,1fr));
-    }
-
-    .videoTile{
-        min-height:150px;
-    }
-
-    #conferenceHeader{
-        align-items:flex-start;
-    }
-}
-
-@media(max-width:480px){
+@media(max-width:600px){
 
     #joinScreen,
     #waitingScreen,
@@ -393,21 +519,66 @@ h1{
         font-size:18px;
     }
 
-    #videoGrid{
-        grid-template-columns:1fr;
+    #conferenceHeader{
+        height:50px;
+        min-height:50px;
+        padding:5px 8px;
     }
 
-    .videoTile{
-        min-height:220px;
+    .conferenceHeaderLogo{
+        height:36px;
+    }
+
+    .auditHeaderText{
+        display:none;
+    }
+
+    #videoGrid{
+        grid-template-columns:repeat(2,minmax(0,1fr));
+        grid-template-rows:none;
+        grid-auto-rows:150px;
+        align-content:start;
+        overflow-x:hidden;
+        overflow-y:auto;
+        -webkit-overflow-scrolling:touch;
+        padding-bottom:10px;
+    }
+
+    .tileLabel{
+        font-size:11px;
+        padding:4px 6px;
     }
 
     #controls{
-        gap:7px;
+        min-height:58px;
+        flex-basis:58px;
+        gap:4px;
+        padding:5px;
     }
 
     .controlButton{
+        min-width:0;
         flex:1;
-        padding:11px 8px;
+        padding:9px 5px;
+        font-size:10px;
+    }
+
+    .controlButton.exit:hover{
+        background:#ff0000;
+    }
+
+    .customAlertBox{
+        min-height:300px;
+        padding:28px 24px 24px;
+        border-width:5px;
+        border-radius:42px;
+    }
+}
+
+@media(max-width:400px){
+
+    #videoGrid{
+        grid-auto-rows:125px;
     }
 }
 
@@ -485,10 +656,17 @@ h1{
 
 <section id="conferenceScreen" class="screen">
     <header id="conferenceHeader">
-        <div>
+        <img
+            src="safe-insight-logo.png"
+            class="conferenceHeaderLogo"
+            alt="Safe Insight"
+        >
+
+        <div class="auditHeaderText">
             <div class="headerTitle">CCW Conference Audit</div>
             <div class="headerSub">VIEW ONLY - NO PERMISSIONS</div>
         </div>
+
         <div id="connectionStatus">● Connecting...</div>
     </header>
 
@@ -500,8 +678,8 @@ h1{
 
     <footer id="controls">
         <button id="micButton" class="controlButton">🔇 Mic OFF</button>
-        <button id="cameraButton" class="controlButton active">📷 Camera ON</button>
-        <button id="exitButton" class="controlButton exit">Exit Conference</button>
+        <button id="cameraButton" class="controlButton active">📹 Camera ON</button>
+        <button id="exitButton" class="controlButton exit">EXIT ROOM</button>
     </footer>
 </section>
 
@@ -512,11 +690,84 @@ h1{
     </div>
 </section>
 
+<div id="customAlertOverlay" aria-hidden="true">
+    <div class="customAlertBox" role="alertdialog" aria-modal="true">
+        <img
+            src="safe-insight-logo.png"
+            alt="Safe Insight"
+            class="customAlertLogo"
+        >
+        <div id="customAlertMessage"></div>
+        <div class="customAlertButtons">
+            <button
+                id="customAlertOkButton"
+                type="button"
+                class="customAlertButton"
+            >
+                OK
+            </button>
+        </div>
+    </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* =========================================================
+   CUSTOM ALERT
+========================================================= */
+
+function showCustomAlert(message){
+    const overlay =
+        document.getElementById("customAlertOverlay");
+
+    const messageElement =
+        document.getElementById("customAlertMessage");
+
+    const okButton =
+        document.getElementById("customAlertOkButton");
+
+    if(
+        !overlay ||
+        !messageElement ||
+        !okButton
+    ){
+        window.showCustomAlert(message);
+        return;
+    }
+
+    messageElement.textContent =
+        String(message ?? "");
+
+    overlay.classList.add("show");
+    overlay.setAttribute(
+        "aria-hidden",
+        "false"
+    );
+
+    okButton.focus();
+
+    const closeAlert =
+        function(){
+            overlay.classList.remove("show");
+            overlay.setAttribute(
+                "aria-hidden",
+                "true"
+            );
+            okButton.removeEventListener(
+                "click",
+                closeAlert
+            );
+        };
+
+    okButton.addEventListener(
+        "click",
+        closeAlert
+    );
+}
+
+/* =========================================================
    SAFE INSIGHT VIDEO CONFERENCE
-   AUDITOR TEST BUILD
+   AUDITOR TEST BUILD — CLEAN v3.3
 
    IMPORTANT:
    - This file is intentionally separate from student/admin.
@@ -2366,8 +2617,8 @@ function synchronizeAuditorMediaState(
 
     cameraButton.textContent =
         record.camera_on
-        ? "📷 Camera ON"
-        : "📷 Camera OFF";
+        ? "📹 Camera ON"
+        : "📹 Camera OFF";
 
     cameraButton.classList.toggle(
         "active",
@@ -2521,7 +2772,7 @@ function subscribeToAuditorStatus(
                         knockButton.textContent =
                             "🔔 Knock to Enter";
 
-                        alert(
+                        showCustomAlert(
                             "Your request to enter the conference audit was denied."
                         );
 
@@ -2561,7 +2812,7 @@ knockButton.addEventListener(
 
         if(!name){
 
-            alert(
+            showCustomAlert(
                 "Please enter your full name."
             );
 
@@ -2582,15 +2833,14 @@ knockButton.addEventListener(
             generateAuditorCredential();
 
         /*
-         * AUDITOR BACKEND CONTRACT.
+         * INTENDED BACKEND CONTRACT.
          *
-         * The database RPC establishes authority by hard-coding:
+         * This RPC is NOT being deployed while live students are
+         * using production. The local migration remains unapplied.
          *
-         *     role   = "auditor"
-         *     status = "waiting"
-         *
-         * The browser supplies the requested conference identity
-         * and media state but never chooses its own authority.
+         * When deployed during a controlled maintenance window,
+         * the RPC itself must hard-code role='auditor' and
+         * status='waiting'. The browser never chooses its role.
          */
         const {
             data,
@@ -2629,8 +2879,8 @@ knockButton.addEventListener(
             knockButton.textContent =
                 "🔔 Knock to Enter";
 
-            alert(
-                "Unable to send your audit request. Please try again."
+            showCustomAlert(
+                "The Auditor test backend is not active yet. No production Supabase change has been made."
             );
 
             return;
@@ -2653,7 +2903,7 @@ knockButton.addEventListener(
             knockButton.textContent =
                 "🔔 Knock to Enter";
 
-            alert(
+            showCustomAlert(
                 "Auditor entry could not be established safely."
             );
 
@@ -2687,7 +2937,6 @@ knockButton.addEventListener(
         );
     }
 );
-
 
 /* =========================================================
    RESTORE APPROVED AUDITOR
@@ -3051,7 +3300,7 @@ exitButton.addEventListener(
                     error
                 );
 
-                alert(
+                showCustomAlert(
                     "Unable to leave the conference cleanly. Please try again."
                 );
 
