@@ -4238,13 +4238,29 @@ function subscribeToMyParticipant(participantId){
 
         if(
             participant.status ===
-            "approved" &&
-            participantView.style.display !== "flex"
+            "approved"
         ){
+
+            /*
+             * APPROVED is authoritative conference state.
+             *
+             * Always reassert the admitted Student interface.
+             * The visible DOM must never be allowed to remain
+             * on the waiting screen merely because some other
+             * part of the interface already appears admitted.
+             *
+             * Capture WebRTC startup state BEFORE
+             * enterConference() changes participantView.
+             */
+
+            const shouldStartParticipantWebRTC =
+                participantView.style.display !== "flex";
+
 
             console.log(
                 "ENTRY APPROVED"
             );
+
 
             enterConference(
                 participant
@@ -4252,17 +4268,23 @@ function subscribeToMyParticipant(participantId){
 
 
             /*
-             * Administrator approval establishes
-             * permission.
+             * Start participant WebRTC only on the transition
+             * into the conference.
              *
-             * The participant now starts WebRTC
-             * and announces participant-ready only
-             * after signaling is ready.
+             * Duplicate authoritative APPROVED observations
+             * may safely reassert the conference UI without
+             * creating duplicate WebRTC startup.
              */
 
-            startParticipantWebRTC(
-                participant
-            );
+            if(
+                shouldStartParticipantWebRTC
+            ){
+
+                startParticipantWebRTC(
+                    participant
+                );
+
+            }
 
         }
 
