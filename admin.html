@@ -4856,11 +4856,23 @@ if(
                  *
                  * The Auditor's viewerId identifies only its WebRTC
                  * transport. It grants no administrator authority.
+                 *
+                 * IMPORTANT:
+                 * Participant media sent TO this Administrator also
+                 * targets administratorViewerId. Those participant
+                 * ICE candidates must continue to the Administrator
+                 * receive-side handler below rather than being
+                 * mistaken for Auditor source-side signaling.
                  */
-
+                
                 if(
                     isAdministrator &&
                     signal.targetId ===
+                    administratorViewerId &&
+                    (
+                        signal.viewerId ||
+                        signal.senderId
+                    ) !==
                     administratorViewerId &&
                     (
                         signal.type ===
