@@ -1,0 +1,3512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="icon" type="image/png" href="favicon.png">
+
+<title>CCW Conference Audit</title>
+<style>
+*{
+    box-sizing:border-box;
+}
+
+html,
+body{
+    margin:0;
+    min-height:100%;
+    font-family:Arial,Helvetica,sans-serif;
+    background:#f3f3f3;
+    color:#111;
+}
+
+body{
+    min-height:100vh;
+}
+
+.hidden{
+    display:none!important;
+}
+
+.screen{
+    min-height:100vh;
+    width:100%;
+}
+
+/*
+ * =========================================================
+ * STANDARD SAFE INSIGHT KNOCK / STATUS SCREENS
+ * =========================================================
+ */
+
+#joinScreen,
+#waitingScreen,
+#endedScreen{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    background:
+        linear-gradient(
+            rgba(0,0,0,.82),
+            rgba(0,0,0,.82)
+        ),
+        #222;
+}
+
+.card{
+    width:min(630px,100%);
+    background:#fff;
+    color:#111;
+    border-radius:16px;
+    padding:48px 44px 42px;
+    box-shadow:0 18px 50px rgba(0,0,0,.45);
+    text-align:center;
+}
+
+.safeInsightLogo{
+    display:block;
+    width:min(365px,85%);
+    height:auto;
+    margin:0 auto 42px;
+}
+
+h1{
+    margin:0 0 18px;
+    font-size:40px;
+    line-height:1.15;
+    font-weight:800;
+    color:#111;
+}
+
+.auditWarning{
+    display:inline-block;
+    margin:0 0 28px;
+    padding:9px 16px;
+    border:2px solid #e51b23;
+    border-radius:8px;
+    color:#e51b23;
+    background:#fff;
+    font-size:17px;
+    font-weight:800;
+    letter-spacing:.5px;
+}
+
+.instructions{
+    margin:0 0 34px;
+    color:#5c5c5c;
+    font-size:20px;
+    line-height:1.45;
+}
+
+.instructions strong{
+    font-weight:800;
+}
+
+#nameInput{
+    width:100%;
+    padding:17px 18px;
+    border:1px solid #bdbdbd;
+    border-radius:8px;
+    background:#fff;
+    color:#222;
+    font-size:20px;
+    outline:none;
+}
+
+#nameInput::placeholder{
+    color:#777;
+}
+
+#nameInput:focus{
+    border-color:#e51b23;
+    box-shadow:0 0 0 2px rgba(229,27,35,.12);
+}
+
+.primaryButton,
+.controlButton{
+    border:0;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:800;
+}
+
+.primaryButton{
+    width:100%;
+    margin-top:22px;
+    padding:17px 18px;
+    background:#e51b23;
+    color:#fff;
+    font-size:19px;
+}
+
+.primaryButton:hover{
+    background:#ca171e;
+}
+
+.primaryButton:disabled{
+    opacity:.55;
+    cursor:not-allowed;
+}
+
+.notice{
+    margin-top:20px;
+    color:#666;
+    font-size:14px;
+    line-height:1.5;
+}
+
+#waitingScreen .spinner{
+    width:46px;
+    height:46px;
+    margin:0 auto 24px;
+    border:5px solid #ddd;
+    border-top-color:#e51b23;
+    border-radius:50%;
+    animation:spin 1s linear infinite;
+}
+
+@keyframes spin{
+    to{
+        transform:rotate(360deg);
+    }
+}
+
+/*
+ * =========================================================
+ * AUDITOR CONFERENCE SCREEN
+ * =========================================================
+ */
+
+#conferenceScreen{
+    display:none;
+    flex-direction:column;
+    width:100%;
+    height:100dvh;
+    background:#000;
+    color:#fff;
+    overflow:hidden;
+}
+
+#conferenceHeader{
+    height:72px;
+    min-height:72px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    padding:8px 16px;
+    background:#000;
+    border-bottom:2px solid #333;
+}
+
+.conferenceHeaderLogo{
+    height:54px;
+    width:auto;
+    object-fit:contain;
+}
+
+.auditHeaderText{
+    text-align:right;
+}
+
+.headerTitle{
+    font-size:22px;
+    line-height:1.1;
+    font-weight:bold;
+    color:#fff;
+}
+
+.headerSub{
+    display:inline-block;
+    margin-top:5px;
+    padding:4px 8px;
+    border:2px solid #e51b23;
+    border-radius:5px;
+    color:#e51b23;
+    background:#000;
+    font-size:12px;
+    line-height:1;
+    font-weight:800;
+    letter-spacing:.4px;
+}
+
+#connectionStatus{
+    display:none;
+}
+
+#videoArea{
+    flex:1;
+    min-height:0;
+    overflow:hidden;
+    padding:0;
+    background:#000;
+}
+
+#videoGrid{
+    width:100%;
+    height:100%;
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    grid-template-rows:repeat(3,minmax(0,1fr));
+    gap:1px;
+    background:#333;
+}
+
+.videoTile{
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    min-width:0;
+    min-height:0;
+    overflow:hidden;
+    border:0;
+    border-radius:0;
+    background:#111;
+}
+
+.videoTile video{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+    background:#111;
+}
+
+.videoTile.localTile video{
+    transform:scaleX(-1);
+}
+
+.videoPlaceholder{
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:18px;
+    background:#151515;
+    color:#888;
+    font-size:16px;
+    text-align:center;
+}
+
+.tileLabel{
+    position:absolute;
+    left:8px;
+    bottom:8px;
+    max-width:calc(100% - 16px);
+    overflow:hidden;
+    padding:5px 9px;
+    border-radius:4px;
+    background:rgba(0,0,0,.75);
+    color:#fff;
+    font-size:14px;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    z-index:5;
+}
+
+.tileRole{
+    margin-left:5px;
+    color:#e51b23;
+    font-size:11px;
+    font-weight:800;
+}
+
+#controls{
+    min-height:64px;
+    flex:0 0 64px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    padding:8px 12px;
+    background:#000;
+    border-top:2px solid #333;
+}
+
+.controlButton{
+    min-width:150px;
+    border:0;
+    border-radius:6px;
+    padding:10px 16px;
+    background:#777;
+    color:#fff;
+    font-size:14px;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+.controlButton:hover{
+    background:#555;
+}
+
+.controlButton.active{
+    background:#147a14;
+    color:#fff;
+}
+
+.controlButton.exit{
+    background:#ff0000;
+    color:#fff;
+}
+
+.controlButton.exit:hover{
+    background:#555;
+}
+
+#emptyMessage{
+    grid-column:1/-1;
+    align-self:center;
+    justify-self:center;
+    padding:10px 14px;
+    border-radius:4px;
+    background:#000;
+    color:#fff;
+    font-size:16px;
+    font-weight:bold;
+    text-align:center;
+}
+
+/* =========================================================
+   CUSTOM ALERT / CONFIRM MODALS
+========================================================= */
+
+#customAlertOverlay{
+    position:fixed;
+    inset:0;
+    z-index:5000;
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    background:rgba(0,0,0,.72);
+}
+
+#customAlertOverlay.show{
+    display:flex;
+}
+
+.customAlertBox{
+    width:min(92vw,760px);
+    min-height:360px;
+    padding:34px 42px 30px;
+    background:#e6e6e6;
+    color:#000;
+    border:6px solid #ed1c24;
+    border-radius:64px;
+    box-shadow:0 18px 60px rgba(0,0,0,.55);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:space-between;
+    text-align:center;
+}
+
+.customAlertLogo{
+    width:min(300px,55%);
+    max-height:100px;
+    object-fit:contain;
+    margin:0 auto 18px;
+}
+
+#customAlertMessage{
+    width:100%;
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:10px 12px 24px;
+    font-size:clamp(22px,3vw,42px);
+    line-height:1.2;
+    font-weight:bold;
+    white-space:pre-wrap;
+    overflow-wrap:anywhere;
+}
+
+.customAlertButtons{
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    gap:14px;
+    width:100%;
+}
+
+.customAlertButton{
+    min-width:120px;
+    padding:11px 24px;
+    border:0;
+    border-radius:7px;
+    background:#000;
+    color:#fff;
+    font-size:16px;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+.customAlertButton:hover{
+    background:#555;
+}
+
+/*
+ * =========================================================
+ * RESPONSIVE
+ * =========================================================
+ */
+
+@media(max-width:900px){
+
+    #conferenceHeader{
+        height:60px;
+        min-height:60px;
+    }
+
+    .conferenceHeaderLogo{
+        height:42px;
+    }
+
+    .headerTitle{
+        font-size:18px;
+    }
+
+    #videoGrid{
+        grid-template-columns:repeat(3,minmax(0,1fr));
+        grid-template-rows:none;
+        grid-auto-rows:minmax(150px,1fr);
+        overflow-y:auto;
+    }
+
+    #controls{
+        min-height:60px;
+        flex-basis:60px;
+    }
+
+    .controlButton{
+        min-width:120px;
+        padding:9px 10px;
+        font-size:12px;
+    }
+}
+
+@media(max-width:600px){
+
+    #joinScreen,
+    #waitingScreen,
+    #endedScreen{
+        padding:14px;
+    }
+
+    .card{
+        padding:30px 20px;
+    }
+
+    .safeInsightLogo{
+        width:min(330px,90%);
+        margin-bottom:28px;
+    }
+
+    h1{
+        font-size:29px;
+    }
+
+    .auditWarning{
+        font-size:14px;
+    }
+
+    .instructions{
+        font-size:18px;
+    }
+
+    #conferenceHeader{
+        height:50px;
+        min-height:50px;
+        padding:5px 8px;
+    }
+
+    .conferenceHeaderLogo{
+        height:36px;
+    }
+
+    .auditHeaderText{
+        display:none;
+    }
+
+    #videoGrid{
+        grid-template-columns:repeat(2,minmax(0,1fr));
+        grid-template-rows:none;
+        grid-auto-rows:150px;
+        align-content:start;
+        overflow-x:hidden;
+        overflow-y:auto;
+        -webkit-overflow-scrolling:touch;
+        padding-bottom:10px;
+    }
+
+    .tileLabel{
+        font-size:11px;
+        padding:4px 6px;
+    }
+
+    #controls{
+        min-height:58px;
+        flex-basis:58px;
+        gap:4px;
+        padding:5px;
+    }
+
+    .controlButton{
+        min-width:0;
+        flex:1;
+        padding:9px 5px;
+        font-size:10px;
+    }
+
+    .controlButton.exit:hover{
+        background:#ff0000;
+    }
+
+    .customAlertBox{
+        min-height:300px;
+        padding:28px 24px 24px;
+        border-width:5px;
+        border-radius:42px;
+    }
+}
+
+@media(max-width:400px){
+
+    #videoGrid{
+        grid-auto-rows:125px;
+    }
+}
+
+</style>
+</head>
+<body>
+
+<section id="joinScreen" class="screen">
+    <div class="card">
+
+        <img
+            src="safe-insight-logo.png"
+            alt="Safe Insight"
+            class="safeInsightLogo"
+        >
+
+        <h1>CCW Conference Audit</h1>
+
+        <div class="auditWarning">
+            VIEW ONLY - NO PERMISSIONS
+        </div>
+
+        <p class="instructions">
+            Please Enter Your <strong>FULL NAME</strong><br>
+            Then Knock To Join Room
+        </p>
+
+        <input
+            id="nameInput"
+            type="text"
+            autocomplete="name"
+            maxlength="120"
+            placeholder="Enter your FULL NAME"
+        >
+
+        <button
+            id="knockButton"
+            class="primaryButton"
+        >
+            🔔 Knock to Enter
+        </button>
+
+        <div class="notice">
+            After admission you may control only your own camera and microphone.
+            You cannot control other conference participants.
+        </div>
+
+    </div>
+</section>
+
+<section id="waitingScreen" class="screen hidden">
+    <div class="card">
+
+        <img
+            src="safe-insight-logo.png"
+            alt="Safe Insight"
+            class="safeInsightLogo"
+        >
+
+        <div class="spinner"></div>
+
+        <h1>Waiting for Approval</h1>
+
+        <p class="instructions">
+            <strong id="waitingName"></strong><br>
+            Your audit request has been sent to the conference administrator.
+        </p>
+
+        <div class="auditWarning">
+            VIEW ONLY - NO PERMISSIONS
+        </div>
+
+    </div>
+</section>
+
+<section id="conferenceScreen" class="screen">
+    <header id="conferenceHeader">
+        <img
+            src="safe-insight-logo.png"
+            class="conferenceHeaderLogo"
+            alt="Safe Insight"
+        >
+
+        <div class="auditHeaderText">
+            <div class="headerTitle">CCW Conference Audit</div>
+            <div class="headerSub">VIEW ONLY - NO PERMISSIONS</div>
+        </div>
+
+        <div id="connectionStatus">● Connecting...</div>
+    </header>
+
+    <main id="videoArea">
+        <div id="videoGrid">
+            <div id="emptyMessage">Waiting for Participant</div>
+        </div>
+    </main>
+
+    <footer id="controls">
+        <button id="micButton" class="controlButton">🔇 Mic OFF</button>
+        <button id="cameraButton" class="controlButton active">📹 Camera ON</button>
+        <button id="exitButton" class="controlButton exit">EXIT ROOM</button>
+    </footer>
+</section>
+
+<section id="endedScreen" class="screen hidden">
+    <div class="card">
+        <h1>Conference Audit Ended</h1>
+        <p class="instructions" id="endedMessage">You have left the conference.</p>
+    </div>
+</section>
+
+<div id="customAlertOverlay" aria-hidden="true">
+    <div class="customAlertBox" role="alertdialog" aria-modal="true">
+        <img
+            src="safe-insight-logo.png"
+            alt="Safe Insight"
+            class="customAlertLogo"
+        >
+        <div id="customAlertMessage"></div>
+        <div class="customAlertButtons">
+            <button
+                id="customAlertOkButton"
+                type="button"
+                class="customAlertButton"
+            >
+                OK
+            </button>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* =========================================================
+   CUSTOM ALERT
+========================================================= */
+
+function showCustomAlert(message){
+    const overlay =
+        document.getElementById("customAlertOverlay");
+
+    const messageElement =
+        document.getElementById("customAlertMessage");
+
+    const okButton =
+        document.getElementById("customAlertOkButton");
+
+    if(
+        !overlay ||
+        !messageElement ||
+        !okButton
+    ){
+        window.showCustomAlert(message);
+        return;
+    }
+
+    messageElement.textContent =
+        String(message ?? "");
+
+    overlay.classList.add("show");
+    overlay.setAttribute(
+        "aria-hidden",
+        "false"
+    );
+
+    okButton.focus();
+
+    const closeAlert =
+        function(){
+            overlay.classList.remove("show");
+            overlay.setAttribute(
+                "aria-hidden",
+                "true"
+            );
+            okButton.removeEventListener(
+                "click",
+                closeAlert
+            );
+        };
+
+    okButton.addEventListener(
+        "click",
+        closeAlert
+    );
+}
+
+/* =========================================================
+   SAFE INSIGHT VIDEO CONFERENCE
+   AUDITOR TEST BUILD — CLEAN v3.3
+
+   IMPORTANT:
+   - This file is intentionally separate from student/admin.
+   - Auditor authority is NOT established by this HTML file.
+   - The future create_conference_auditor RPC must create:
+         role   = "auditor"
+         status = "waiting"
+   - Approval remains an administrator-controlled transition.
+   - Auditor controls are limited to its own camera/microphone.
+========================================================= */
+
+/* =========================================================
+   SUPABASE
+========================================================= */
+
+const SUPABASE_URL =
+    "https://ohrkwtcsprzvgkqidcei.supabase.co";
+
+const SUPABASE_PUBLISHABLE_KEY =
+    "sb_publishable_RD9pOKKYBSJU-7jjNNFfBg_VJcyWNeu";
+
+const supabaseClient =
+    window.supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_PUBLISHABLE_KEY
+    );
+
+/* =========================================================
+   CONFERENCE ROOM / BUILD
+========================================================= */
+
+const urlParams =
+    new URLSearchParams(
+        window.location.search
+    );
+
+const ROOM_ID =
+    urlParams.get("room") || "DEMO";
+
+const CONFERENCE_BUILD =
+    "AUDITOR-TEST v1.0";
+
+console.log(
+    "🚔 CONFERENCE BUILD:",
+    CONFERENCE_BUILD
+);
+
+console.log(
+    "Conference Room:",
+    ROOM_ID
+);
+
+/* =========================================================
+   DOM REFERENCES
+========================================================= */
+
+const joinScreen =
+    document.getElementById("joinScreen");
+
+const waitingScreen =
+    document.getElementById("waitingScreen");
+
+const conferenceScreen =
+    document.getElementById("conferenceScreen");
+
+const endedScreen =
+    document.getElementById("endedScreen");
+
+const endedMessage =
+    document.getElementById("endedMessage");
+
+const nameInput =
+    document.getElementById("nameInput");
+
+const knockButton =
+    document.getElementById("knockButton");
+
+const waitingName =
+    document.getElementById("waitingName");
+
+const connectionStatus =
+    document.getElementById("connectionStatus");
+
+const videoGrid =
+    document.getElementById("videoGrid");
+
+const emptyMessage =
+    document.getElementById("emptyMessage");
+
+const micButton =
+    document.getElementById("micButton");
+
+const cameraButton =
+    document.getElementById("cameraButton");
+
+const exitButton =
+    document.getElementById("exitButton");
+
+/* =========================================================
+   AUDITOR STATE
+========================================================= */
+
+let localStream =
+    null;
+
+let auditorCredential =
+    null;
+
+let auditorRecord =
+    null;
+
+let statusChannel =
+    null;
+
+let conferenceChannel =
+    null;
+
+let webrtcSignalingChannel =
+    null;
+
+let webRTCSignalingReady =
+    false;
+
+let turnCredentialsPromise =
+    null;
+
+let turnCredentialsReady =
+    false;
+
+let rtcConfiguration = {
+    iceServers: [
+        {
+            urls:
+                "stun:stun.cloudflare.com:3478"
+        }
+    ]
+};
+
+const viewerPeerConnections =
+    new Map();
+
+const viewerRemoteStreams =
+    new Map();
+
+const pendingViewerIceCandidates =
+    new Map();
+
+const sourcePeerConnections =
+    new Map();
+
+const pendingSourceIceCandidates =
+    new Map();
+
+const visibleConferenceRecords =
+    new Map();
+
+const auditorViewerId =
+    "auditor-viewer-" +
+    (
+        globalThis.crypto?.randomUUID
+        ? globalThis.crypto.randomUUID()
+        : (
+            Date.now().toString(36) +
+            "-" +
+            Math.random().toString(36).slice(2)
+        )
+    );
+
+console.log(
+    "Auditor viewer transport:",
+    auditorViewerId
+);
+
+/* =========================================================
+   SESSION STORAGE
+========================================================= */
+
+const AUDITOR_SESSION_STORAGE_KEY =
+    "safeInsightConferenceAuditor:" +
+    ROOM_ID;
+
+function saveAuditorSession(){
+
+    if(
+        !auditorRecord?.id ||
+        !auditorCredential
+    ){
+        return;
+    }
+
+    sessionStorage.setItem(
+        AUDITOR_SESSION_STORAGE_KEY,
+        JSON.stringify({
+            roomId:
+                ROOM_ID,
+
+            participantId:
+                auditorRecord.id,
+
+            credential:
+                auditorCredential
+        })
+    );
+}
+
+function clearAuditorSession(){
+
+    sessionStorage.removeItem(
+        AUDITOR_SESSION_STORAGE_KEY
+    );
+}
+
+function loadAuditorSession(){
+
+    const stored =
+        sessionStorage.getItem(
+            AUDITOR_SESSION_STORAGE_KEY
+        );
+
+    if(!stored){
+        return null;
+    }
+
+    try{
+
+        const parsed =
+            JSON.parse(
+                stored
+            );
+
+        if(
+            !parsed ||
+            parsed.roomId !== ROOM_ID ||
+            !parsed.participantId ||
+            !parsed.credential
+        ){
+            clearAuditorSession();
+            return null;
+        }
+
+        return parsed;
+
+    }catch(error){
+
+        console.warn(
+            "Auditor session could not be read:",
+            error
+        );
+
+        clearAuditorSession();
+
+        return null;
+    }
+}
+
+/* =========================================================
+   CREDENTIAL
+========================================================= */
+
+function generateAuditorCredential(){
+
+    const bytes =
+        new Uint8Array(32);
+
+    crypto.getRandomValues(
+        bytes
+    );
+
+    let binary =
+        "";
+
+    bytes.forEach(
+        byte => {
+            binary +=
+                String.fromCharCode(
+                    byte
+                );
+        }
+    );
+
+    return btoa(binary)
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+}
+
+/* =========================================================
+   LOCAL MEDIA
+========================================================= */
+
+async function acquireLocalMedia(){
+
+    if(localStream){
+        return true;
+    }
+
+    try{
+
+        localStream =
+            await navigator.mediaDevices.getUserMedia({
+                video:
+                    true,
+
+                audio:
+                    true
+            });
+
+        localStream
+            .getAudioTracks()
+            .forEach(
+                track => {
+                    track.enabled =
+                        false;
+                }
+            );
+
+        return true;
+
+    }catch(error){
+
+        console.warn(
+            "Auditor camera/microphone permission unavailable:",
+            error
+        );
+
+        /*
+         * Admission may still continue. A receive-only auditor
+         * must not be prevented from observing merely because
+         * this device has no camera/microphone.
+         */
+        localStream =
+            new MediaStream();
+
+        return false;
+    }
+}
+
+/* =========================================================
+   TURN
+========================================================= */
+
+async function ensureTurnCredentials(){
+
+    if(turnCredentialsReady){
+        return true;
+    }
+
+    if(turnCredentialsPromise){
+        return turnCredentialsPromise;
+    }
+
+    turnCredentialsPromise =
+        (async function(){
+
+            try{
+
+                if(
+                    !auditorRecord?.id ||
+                    !auditorCredential
+                ){
+                    throw new Error(
+                        "Approved auditor credential is unavailable for TURN."
+                    );
+                }
+
+                const response =
+                    await fetch(
+                        SUPABASE_URL +
+                        "/functions/v1/turn-credentials",
+                        {
+                            method:
+                                "POST",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json",
+
+                                "apikey":
+                                    SUPABASE_PUBLISHABLE_KEY
+                            },
+
+                            body:
+                                JSON.stringify({
+                                    roomId:
+                                        ROOM_ID,
+
+                                    participantId:
+                                        auditorRecord.id,
+
+                                    participantCredential:
+                                        auditorCredential
+                                })
+                        }
+                    );
+
+                if(!response.ok){
+
+                    const text =
+                        await response.text();
+
+                    throw new Error(
+                        "TURN credential request failed (" +
+                        response.status +
+                        "): " +
+                        text
+                    );
+                }
+
+                const turnData =
+                    await response.json();
+
+                if(
+                    !turnData ||
+                    !Array.isArray(
+                        turnData.iceServers
+                    ) ||
+                    !turnData.iceServers.length
+                ){
+                    throw new Error(
+                        "TURN response did not contain iceServers."
+                    );
+                }
+
+                rtcConfiguration = {
+                    iceServers: [
+                        {
+                            urls:
+                                "stun:stun.cloudflare.com:3478"
+                        },
+                        ...turnData.iceServers
+                    ]
+                };
+
+                turnCredentialsReady =
+                    true;
+
+                console.log(
+                    "Auditor TURN fallback ready."
+                );
+
+                return true;
+
+            }catch(error){
+
+                console.warn(
+                    "Auditor TURN unavailable; continuing with STUN:",
+                    error
+                );
+
+                rtcConfiguration = {
+                    iceServers: [
+                        {
+                            urls:
+                                "stun:stun.cloudflare.com:3478"
+                        }
+                    ]
+                };
+
+                return false;
+
+            }finally{
+
+                if(!turnCredentialsReady){
+                    turnCredentialsPromise =
+                        null;
+                }
+            }
+        })();
+
+    return turnCredentialsPromise;
+}
+
+/* =========================================================
+   VIDEO GRID
+========================================================= */
+
+function removeEmptyMessage(){
+
+    if(
+        emptyMessage &&
+        emptyMessage.parentElement
+    ){
+        emptyMessage.remove();
+    }
+}
+
+
+function showEmptyMessageIfNeeded(){
+
+    if(
+        videoGrid.querySelector(
+            ".videoTile"
+        )
+    ){
+        return;
+    }
+
+
+    /*
+     * Keep the Auditor conference grid consistent with the
+     * established conference presentation.
+     */
+
+    emptyMessage.textContent =
+        "Waiting for Participant";
+
+
+    if(
+        emptyMessage &&
+        !emptyMessage.parentElement
+    ){
+        videoGrid.appendChild(
+            emptyMessage
+        );
+    }
+}
+
+
+function ensureVideoTile(
+    sourceId,
+    displayName,
+    role,
+    isLocal
+){
+
+    const tileId =
+        "video-tile-" +
+        sourceId.replace(
+            /[^a-zA-Z0-9_-]/g,
+            "-"
+        );
+
+    let tile =
+        document.getElementById(
+            tileId
+        );
+
+    if(tile){
+        return tile;
+    }
+
+    removeEmptyMessage();
+
+    tile =
+        document.createElement(
+            "div"
+        );
+
+    tile.id =
+        tileId;
+
+    tile.className =
+        "videoTile" +
+        (
+            isLocal
+            ? " localTile"
+            : ""
+        );
+
+    const video =
+        document.createElement(
+            "video"
+        );
+
+    video.autoplay =
+        true;
+
+    video.playsInline =
+        true;
+
+    video.muted =
+        !!isLocal;
+
+    video.dataset.sourceId =
+        sourceId;
+
+    const placeholder =
+        document.createElement(
+            "div"
+        );
+
+    placeholder.className =
+        "videoPlaceholder";
+
+    placeholder.textContent =
+        "Camera Off";
+
+    const label =
+        document.createElement(
+            "div"
+        );
+
+    label.className =
+        "tileLabel";
+
+    const safeName =
+        displayName ||
+        "Conference Participant";
+
+    label.textContent =
+        safeName;
+
+    const roleLabel =
+        document.createElement(
+            "span"
+        );
+
+    roleLabel.className =
+        "tileRole";
+
+    roleLabel.textContent =
+        role === "auditor"
+        ? "AUDITOR"
+        : (
+            role === "administrator"
+            ? "ADMIN"
+            : ""
+        );
+
+    if(roleLabel.textContent){
+        label.appendChild(
+            roleLabel
+        );
+    }
+
+    tile.appendChild(
+        video
+    );
+
+    tile.appendChild(
+        placeholder
+    );
+
+    tile.appendChild(
+        label
+    );
+
+    videoGrid.appendChild(
+        tile
+    );
+
+    return tile;
+}
+
+
+function attachStreamToTile(
+    sourceId,
+    stream,
+    displayName,
+    role,
+    isLocal
+){
+
+    const tile =
+        ensureVideoTile(
+            sourceId,
+            displayName,
+            role,
+            isLocal
+        );
+
+    const video =
+        tile.querySelector(
+            "video"
+        );
+
+    const placeholder =
+        tile.querySelector(
+            ".videoPlaceholder"
+        );
+
+    video.srcObject =
+        stream;
+
+    const hasLiveVideo =
+        stream
+            .getVideoTracks()
+            .some(
+                track =>
+                    track.readyState === "live" &&
+                    track.enabled
+            );
+
+    video.style.display =
+        hasLiveVideo
+        ? "block"
+        : "none";
+
+    placeholder.style.display =
+        hasLiveVideo
+        ? "none"
+        : "flex";
+
+    video.play()
+        .catch(
+            () => {}
+        );
+}
+
+
+function refreshLocalTile(){
+
+    if(
+        !auditorRecord?.id ||
+        !localStream
+    ){
+        return;
+    }
+
+    attachStreamToTile(
+        auditorRecord.id,
+        localStream,
+        auditorRecord.participant_name ||
+            "You",
+        "auditor",
+        true
+    );
+}
+
+
+function removeVideoTile(
+    sourceId
+){
+
+    const tileId =
+        "video-tile-" +
+        sourceId.replace(
+            /[^a-zA-Z0-9_-]/g,
+            "-"
+        );
+
+    const tile =
+        document.getElementById(
+            tileId
+        );
+
+    if(tile){
+
+        const video =
+            tile.querySelector(
+                "video"
+            );
+
+        if(video){
+            video.srcObject =
+                null;
+        }
+
+        tile.remove();
+    }
+
+    showEmptyMessageIfNeeded();
+}
+
+/* =========================================================
+   SIGNALING
+========================================================= */
+
+async function sendWebRTCSignal(
+    signal
+){
+
+    if(!webrtcSignalingChannel){
+        return;
+    }
+
+    await webrtcSignalingChannel.send({
+        type:
+            "broadcast",
+
+        event:
+            "webrtc-signal",
+
+        payload:
+            signal
+    });
+}
+
+function initializeWebRTCSignaling(){
+
+    if(webrtcSignalingChannel){
+        return;
+    }
+
+    webrtcSignalingChannel =
+        supabaseClient.channel(
+            "webrtc-room-" +
+            ROOM_ID
+        );
+
+    webrtcSignalingChannel
+        .on(
+            "broadcast",
+            {
+                event:
+                    "webrtc-signal"
+            },
+            async function(payload){
+
+                const signal =
+                    payload.payload;
+
+                if(!signal){
+                    return;
+                }
+
+                /*
+                 * Ignore only signals originating from this
+                 * auditor's viewer transport or participant ID.
+                 */
+                if(
+                    signal.senderId ===
+                        auditorViewerId ||
+                    (
+                        auditorRecord?.id &&
+                        signal.senderId ===
+                            auditorRecord.id
+                    )
+                ){
+                    return;
+                }
+
+                /*
+                 * Auditor-as-viewer:
+                 * Existing participant-ready messages are
+                 * intentionally heard by every approved Auditor.
+                 *
+                 * The auditor still does not become a viewer until
+                 * its own database record is APPROVED.
+                 */
+                if(
+                    auditorRecord?.status === "approved" &&
+                    signal.type === "participant-ready" &&
+                    signal.participantId &&
+                    signal.participantId !== auditorRecord.id
+                ){
+                    await createViewerPeerConnection(
+                        signal.participantId,
+                        signal.participantName ||
+                            visibleConferenceRecords
+                                .get(signal.participantId)
+                                ?.participant_name ||
+                            "Conference Participant",
+                        signal.participantRole ||
+                            visibleConferenceRecords
+                                .get(signal.participantId)
+                                ?.role ||
+                            "participant"
+                    );
+
+                    return;
+                }
+
+                /*
+                 * Future admin-test support:
+                 * Once the administrator test page publishes
+                 * administrator-media-ready, this Auditor file is
+                 * already prepared to request that administrator's
+                 * media as another receive-only source.
+                 */
+                if(
+                    auditorRecord?.status === "approved" &&
+                    signal.type === "administrator-media-ready" &&
+                    signal.sourceId
+                ){
+                    await createViewerPeerConnection(
+                        signal.sourceId,
+                        signal.sourceName ||
+                            "Conference Administrator",
+                        "administrator"
+                    );
+
+                    return;
+                }
+
+                /*
+                 * Viewer-specific answer / ICE for media this
+                 * Auditor is receiving.
+                 */
+                if(
+                    signal.targetId ===
+                        auditorViewerId &&
+                    signal.viewerId ===
+                        auditorViewerId
+                ){
+                    await handleViewerSignal(
+                        signal
+                    );
+
+                    return;
+                }
+
+                /*
+                 * Auditor-as-source:
+                 * Admins and other approved viewers may request
+                 * this Auditor's camera/microphone using the same
+                 * multi-viewer offer contract as participants.
+                 */
+                if(
+                    auditorRecord?.status === "approved" &&
+                    signal.targetId ===
+                        auditorRecord.id &&
+                    (
+                        signal.type === "offer" ||
+                        signal.type === "ice-candidate"
+                    )
+                ){
+                    await handleSourceSignal(
+                        signal
+                    );
+                }
+            }
+        )
+        .subscribe(
+            async function(status){
+
+                console.log(
+                    "Auditor signaling status:",
+                    status
+                );
+
+                if(
+                    status ===
+                    "SUBSCRIBED"
+                ){
+                    webRTCSignalingReady =
+                        true;
+
+                    if(
+                        auditorRecord?.status ===
+                        "approved"
+                    ){
+                        await announceAuditorMediaReady();
+                        await connectToExistingConferenceSources();
+                    }
+                }
+            }
+        );
+}
+
+/* =========================================================
+   AUDITOR AS MEDIA SOURCE
+========================================================= */
+
+async function createSourcePeerConnection(
+    viewerId
+){
+
+    if(
+        !viewerId ||
+        !localStream
+    ){
+        return null;
+    }
+
+    const existing =
+        sourcePeerConnections.get(
+            viewerId
+        );
+
+    if(existing){
+
+        existing.onicecandidate =
+            null;
+
+        existing.close();
+
+        sourcePeerConnections.delete(
+            viewerId
+        );
+    }
+
+    await ensureTurnCredentials();
+
+    const peerConnection =
+        new RTCPeerConnection(
+            rtcConfiguration
+        );
+
+    sourcePeerConnections.set(
+        viewerId,
+        peerConnection
+    );
+
+    localStream
+        .getTracks()
+        .forEach(
+            track => {
+                peerConnection.addTrack(
+                    track,
+                    localStream
+                );
+            }
+        );
+
+    peerConnection.onicecandidate =
+        async function(event){
+
+            if(!event.candidate){
+                return;
+            }
+
+            await sendWebRTCSignal({
+                type:
+                    "ice-candidate",
+
+                senderId:
+                    auditorRecord.id,
+
+                targetId:
+                    viewerId,
+
+                participantId:
+                    auditorRecord.id,
+
+                viewerId:
+                    viewerId,
+
+                candidate:
+                    event.candidate
+            });
+        };
+
+    peerConnection.onconnectionstatechange =
+        function(){
+
+            console.log(
+                "Auditor source connection:",
+                viewerId,
+                peerConnection.connectionState
+            );
+        };
+
+    return peerConnection;
+}
+
+async function handleSourceSignal(
+    signal
+){
+
+    const viewerId =
+        signal.viewerId;
+
+    if(!viewerId){
+        return;
+    }
+
+    if(
+        signal.type ===
+        "offer"
+    ){
+
+        const peerConnection =
+            await createSourcePeerConnection(
+                viewerId
+            );
+
+        if(!peerConnection){
+            return;
+        }
+
+        await peerConnection.setRemoteDescription(
+            signal.offer
+        );
+
+        const queuedCandidates =
+            pendingSourceIceCandidates.get(
+                viewerId
+            ) || [];
+
+        for(
+            const candidate
+            of queuedCandidates
+        ){
+            await peerConnection.addIceCandidate(
+                candidate
+            );
+        }
+
+        pendingSourceIceCandidates.delete(
+            viewerId
+        );
+
+        const answer =
+            await peerConnection.createAnswer();
+
+        await peerConnection.setLocalDescription(
+            answer
+        );
+
+        await sendWebRTCSignal({
+            type:
+                "answer",
+
+            senderId:
+                auditorRecord.id,
+
+            targetId:
+                viewerId,
+
+            participantId:
+                auditorRecord.id,
+
+            viewerId:
+                viewerId,
+
+            answer:
+                answer
+        });
+
+        return;
+    }
+
+    if(
+        signal.type ===
+        "ice-candidate" &&
+        signal.candidate
+    ){
+
+        const peerConnection =
+            sourcePeerConnections.get(
+                viewerId
+            );
+
+        if(
+            peerConnection &&
+            peerConnection.remoteDescription
+        ){
+            await peerConnection.addIceCandidate(
+                signal.candidate
+            );
+
+            return;
+        }
+
+        const queued =
+            pendingSourceIceCandidates.get(
+                viewerId
+            ) || [];
+
+        queued.push(
+            signal.candidate
+        );
+
+        pendingSourceIceCandidates.set(
+            viewerId,
+            queued
+        );
+    }
+}
+
+async function announceAuditorMediaReady(){
+
+    if(
+        !auditorRecord?.id ||
+        auditorRecord.status !==
+            "approved" ||
+        !webRTCSignalingReady
+    ){
+        return;
+    }
+
+    await sendWebRTCSignal({
+        type:
+            "participant-ready",
+
+        senderId:
+            auditorRecord.id,
+
+        targetId:
+            "administrator",
+
+        participantId:
+            auditorRecord.id,
+
+        participantName:
+            auditorRecord.participant_name,
+
+        participantRole:
+            "auditor"
+    });
+
+    console.log(
+        "Auditor media-ready announcement sent:",
+        auditorRecord.id
+    );
+}
+
+/* =========================================================
+   AUDITOR AS RECEIVE-ONLY VIEWER
+========================================================= */
+
+function releaseViewerPeerConnection(
+    sourceId,
+    removeTile
+){
+
+    const peerConnection =
+        viewerPeerConnections.get(
+            sourceId
+        );
+
+    if(peerConnection){
+
+        peerConnection.ontrack =
+            null;
+
+        peerConnection.onicecandidate =
+            null;
+
+        peerConnection.onconnectionstatechange =
+            null;
+
+        peerConnection.close();
+
+        viewerPeerConnections.delete(
+            sourceId
+        );
+    }
+
+    viewerRemoteStreams.delete(
+        sourceId
+    );
+
+    pendingViewerIceCandidates.delete(
+        sourceId
+    );
+
+    if(removeTile){
+        removeVideoTile(
+            sourceId
+        );
+    }
+}
+
+
+async function createViewerPeerConnection(
+    sourceId,
+    displayName,
+    role
+){
+
+    if(
+        !sourceId ||
+        sourceId === auditorRecord?.id
+    ){
+        return null;
+    }
+
+    const existing =
+        viewerPeerConnections.get(
+            sourceId
+        );
+
+    if(
+        existing &&
+        ![
+            "failed",
+            "closed"
+        ].includes(
+            existing.connectionState
+        )
+    ){
+        return existing;
+    }
+
+    if(existing){
+
+        releaseViewerPeerConnection(
+            sourceId,
+            true
+        );
+    }
+
+    await ensureTurnCredentials();
+
+    const peerConnection =
+        new RTCPeerConnection(
+            rtcConfiguration
+        );
+
+    viewerPeerConnections.set(
+        sourceId,
+        peerConnection
+    );
+
+    const remoteStream =
+        new MediaStream();
+
+    viewerRemoteStreams.set(
+        sourceId,
+        remoteStream
+    );
+
+    peerConnection.addTransceiver(
+        "video",
+        {
+            direction:
+                "recvonly"
+        }
+    );
+
+    peerConnection.addTransceiver(
+        "audio",
+        {
+            direction:
+                "recvonly"
+        }
+    );
+
+    peerConnection.ontrack =
+        function(event){
+
+            let stream =
+                viewerRemoteStreams.get(
+                    sourceId
+                );
+
+            if(!stream){
+
+                stream =
+                    new MediaStream();
+
+                viewerRemoteStreams.set(
+                    sourceId,
+                    stream
+                );
+            }
+
+            const alreadyPresent =
+                stream
+                    .getTracks()
+                    .some(
+                        track =>
+                            track.id ===
+                            event.track.id
+                    );
+
+            if(!alreadyPresent){
+                stream.addTrack(
+                    event.track
+                );
+            }
+
+            attachStreamToTile(
+                sourceId,
+                stream,
+                displayName,
+                role,
+                false
+            );
+
+            event.track.onunmute =
+                function(){
+                    attachStreamToTile(
+                        sourceId,
+                        stream,
+                        displayName,
+                        role,
+                        false
+                    );
+                };
+
+            event.track.onended =
+                function(){
+                    attachStreamToTile(
+                        sourceId,
+                        stream,
+                        displayName,
+                        role,
+                        false
+                    );
+                };
+        };
+
+    peerConnection.onicecandidate =
+        async function(event){
+
+            if(!event.candidate){
+                return;
+            }
+
+            await sendWebRTCSignal({
+                type:
+                    "ice-candidate",
+
+                senderId:
+                    auditorViewerId,
+
+                targetId:
+                    sourceId,
+
+                participantId:
+                    sourceId,
+
+                viewerId:
+                    auditorViewerId,
+
+                candidate:
+                    event.candidate
+            });
+        };
+
+    peerConnection.onconnectionstatechange =
+        function(){
+
+            console.log(
+                "Auditor viewer connection:",
+                sourceId,
+                peerConnection.connectionState
+            );
+
+            if(
+                peerConnection.connectionState ===
+                "connected"
+            ){
+                connectionStatus.textContent =
+                    "● Connected";
+
+                connectionStatus.style.color =
+                    "#52d273";
+
+                return;
+            }
+
+            if(
+                [
+                    "failed",
+                    "closed"
+                ].includes(
+                    peerConnection.connectionState
+                )
+            ){
+
+                /*
+                 * Only release this source if this is still
+                 * the current peer connection stored for it.
+                 *
+                 * A stale connection event must never tear
+                 * down a newer replacement connection.
+                 */
+
+                if(
+                    viewerPeerConnections.get(
+                        sourceId
+                    ) === peerConnection
+                ){
+                    releaseViewerPeerConnection(
+                        sourceId,
+                        true
+                    );
+                }
+            }
+        };
+
+    const offer =
+        await peerConnection.createOffer();
+
+    await peerConnection.setLocalDescription(
+        offer
+    );
+
+    await sendWebRTCSignal({
+        type:
+            "offer",
+
+        senderId:
+            auditorViewerId,
+
+        targetId:
+            sourceId,
+
+        participantId:
+            sourceId,
+
+        viewerId:
+            auditorViewerId,
+
+        offer:
+            offer
+    });
+
+    return peerConnection;
+}
+
+async function handleViewerSignal(
+    signal
+){
+
+    const sourceId =
+        signal.participantId ||
+        signal.sourceId;
+
+    if(!sourceId){
+        return;
+    }
+
+    const peerConnection =
+        viewerPeerConnections.get(
+            sourceId
+        );
+
+    if(!peerConnection){
+        return;
+    }
+
+    if(
+        signal.type ===
+        "answer" &&
+        signal.answer
+    ){
+
+        await peerConnection.setRemoteDescription(
+            signal.answer
+        );
+
+        const queued =
+            pendingViewerIceCandidates.get(
+                sourceId
+            ) || [];
+
+        for(
+            const candidate
+            of queued
+        ){
+            await peerConnection.addIceCandidate(
+                candidate
+            );
+        }
+
+        pendingViewerIceCandidates.delete(
+            sourceId
+        );
+
+        return;
+    }
+
+    if(
+        signal.type ===
+        "ice-candidate" &&
+        signal.candidate
+    ){
+
+        if(
+            peerConnection.remoteDescription
+        ){
+            await peerConnection.addIceCandidate(
+                signal.candidate
+            );
+
+            return;
+        }
+
+        const queued =
+            pendingViewerIceCandidates.get(
+                sourceId
+            ) || [];
+
+        queued.push(
+            signal.candidate
+        );
+
+        pendingViewerIceCandidates.set(
+            sourceId,
+            queued
+        );
+    }
+}
+
+/* =========================================================
+   CONFERENCE RECORDS
+========================================================= */
+
+function isAuditorVisibleConferenceRole(
+    role
+){
+
+    /*
+     * An Auditor may observe only conference roles that
+     * explicitly belong in the Auditor video population.
+     *
+     * Keep this rule here rather than assuming every future
+     * conference_participants role should automatically
+     * become visible to Auditors.
+     *
+     * Administrator media uses its own explicit signaling
+     * path and is therefore intentionally not represented
+     * by this database-role check.
+     */
+
+    return (
+        role === "participant" ||
+        role === "auditor"
+    );
+}
+
+async function connectToExistingConferenceSources(){
+
+    if(
+        auditorRecord?.status !==
+        "approved" ||
+        !webRTCSignalingReady
+    ){
+        return;
+    }
+
+    const {
+        data,
+        error
+    } =
+    await supabaseClient
+        .from(
+            "conference_participants"
+        )
+        .select(
+            "id, participant_name, role, status, camera_on, mic_on"
+        )
+        .eq(
+            "room_id",
+            ROOM_ID
+        )
+        .eq(
+            "status",
+            "approved"
+        );
+
+    if(error){
+
+        console.error(
+            "Could not load approved conference participants:",
+            error
+        );
+
+        return;
+    }
+
+    for(
+        const record
+        of (
+            data || []
+        )
+    ){
+
+        visibleConferenceRecords.set(
+            record.id,
+            record
+        );
+
+        if(
+            record.id ===
+            auditorRecord.id
+        ){
+            continue;
+        }
+
+        if(
+            !isAuditorVisibleConferenceRole(
+                record.role
+            )
+        ){
+            console.log(
+                "Auditor viewer skipped non-visible conference role:",
+                {
+                    id:
+                        record.id,
+
+                    role:
+                        record.role
+                }
+            );
+
+            continue;
+        }
+
+        await createViewerPeerConnection(
+            record.id,
+            record.participant_name,
+            record.role
+        );
+    }
+}
+
+function subscribeToConferenceRecords(){
+
+    if(conferenceChannel){
+        return;
+    }
+
+    conferenceChannel =
+        supabaseClient
+            .channel(
+                "auditor-room-" +
+                ROOM_ID
+            )
+            .on(
+                "postgres_changes",
+                {
+                    event:
+                        "*",
+
+                    schema:
+                        "public",
+
+                    table:
+                        "conference_participants",
+
+                    filter:
+                        "room_id=eq." +
+                        ROOM_ID
+                },
+                async function(payload){
+
+                    const record =
+                        payload.new;
+
+                    const oldRecord =
+                        payload.old;
+
+                    if(
+                        record?.id
+                    ){
+                        visibleConferenceRecords.set(
+                            record.id,
+                            record
+                        );
+                    }
+
+                    if(
+                        record?.id ===
+                        auditorRecord?.id
+                    ){
+                        return;
+                    }
+
+                    if(
+                        record?.status ===
+                            "approved" &&
+                        isAuditorVisibleConferenceRole(
+                            record.role
+                        )
+                    ){
+                        await createViewerPeerConnection(
+                            record.id,
+                            record.participant_name,
+                            record.role
+                        );
+
+                        return;
+                    }
+
+                    /*
+                     * A record that is no longer approved OR
+                     * no longer belongs to an Auditor-visible role
+                     * must not retain media in the Auditor interface.
+                     */
+
+                    const removedId =
+                        record?.id ||
+                        oldRecord?.id;
+
+                    if(removedId){
+
+                        const peer =
+                            viewerPeerConnections.get(
+                                removedId
+                            );
+
+                        if(peer){
+
+                            peer.onicecandidate =
+                                null;
+
+                            peer.onconnectionstatechange =
+                                null;
+
+                            peer.close();
+
+                            viewerPeerConnections.delete(
+                                removedId
+                            );
+                        }
+
+                        viewerRemoteStreams.delete(
+                            removedId
+                        );
+
+                        pendingViewerIceCandidates.delete(
+                            removedId
+                        );
+
+                        removeVideoTile(
+                            removedId
+                        );
+                    }
+                }
+            )
+            .subscribe();
+}
+
+/* =========================================================
+   AUDITOR STATUS
+========================================================= */
+
+function synchronizeAuditorMediaState(
+    record
+){
+
+    if(
+        !record ||
+        record.role !== "auditor" ||
+        !localStream
+    ){
+        return;
+    }
+
+
+    /*
+     * The database is authoritative.
+     *
+     * The Auditor may operate their own camera and
+     * microphone, but an Administrator may also change
+     * those states.
+     *
+     * Realtime therefore reconciles the local MediaStream
+     * with the authoritative conference participant record.
+     */
+
+    localStream
+        .getVideoTracks()
+        .forEach(
+            track => {
+                track.enabled =
+                    !!record.camera_on;
+            }
+        );
+
+
+    localStream
+        .getAudioTracks()
+        .forEach(
+            track => {
+                track.enabled =
+                    !!record.mic_on;
+            }
+        );
+
+
+    cameraButton.textContent =
+        record.camera_on
+        ? "📹 Camera ON"
+        : "📹 Camera OFF";
+
+    cameraButton.classList.toggle(
+        "active",
+        !!record.camera_on
+    );
+
+
+    micButton.textContent =
+        record.mic_on
+        ? "🎤 Mic ON"
+        : "🔇 Mic OFF";
+
+    micButton.classList.toggle(
+        "active",
+        !!record.mic_on
+    );
+
+
+    /*
+     * An Administrator microphone lock prevents the
+     * Auditor from turning their microphone back on.
+     *
+     * The button remains visible so the Auditor can see
+     * their own microphone state, but it cannot override
+     * the Administrator's lock.
+     */
+
+    micButton.disabled =
+        !!record.mic_locked;
+
+    micButton.title =
+        record.mic_locked
+        ? "Microphone locked by conference administrator"
+        : "";
+
+
+    refreshLocalTile();
+}
+
+
+function subscribeToAuditorStatus(
+    participantId
+){
+
+    if(statusChannel){
+        supabaseClient.removeChannel(
+            statusChannel
+        );
+    }
+
+    statusChannel =
+        supabaseClient
+            .channel(
+                "auditor-status-" +
+                participantId
+            )
+            .on(
+                "postgres_changes",
+                {
+                    event:
+                        "UPDATE",
+
+                    schema:
+                        "public",
+
+                    table:
+                        "conference_participants",
+
+                    filter:
+                        "id=eq." +
+                        participantId
+                },
+                async function(payload){
+
+                    const record =
+                        payload.new;
+
+                    console.log(
+                        "Auditor status update:",
+                        record
+                    );
+
+
+                    /*
+                     * Role is checked as well as status.
+                     * An approved ordinary participant record must
+                     * never become an Auditor interface merely
+                     * because its ID/credential was supplied here.
+                     */
+
+                    if(
+                        record.status ===
+                            "approved" &&
+                        record.role ===
+                            "auditor"
+                    ){
+
+                        const wasAlreadyInConference =
+                            auditorRecord?.status ===
+                                "approved" &&
+                            conferenceScreen.style.display ===
+                                "flex";
+
+                        auditorRecord =
+                            record;
+
+                        saveAuditorSession();
+
+                        synchronizeAuditorMediaState(
+                            record
+                        );
+
+
+                        /*
+                         * Only the transition INTO approved should
+                         * perform conference entry.
+                         *
+                         * Later approved → approved updates are
+                         * ordinary camera/microphone/lock changes
+                         * and must not restart WebRTC or repeat
+                         * conference-entry work.
+                         */
+
+                        if(
+                            !wasAlreadyInConference
+                        ){
+                            await enterAuditConference();
+                        }
+
+                        return;
+                    }
+
+
+                    if(
+                        record.status ===
+                            "denied"
+                    ){
+                        clearAuditorSession();
+
+                        waitingScreen.classList.add(
+                            "hidden"
+                        );
+
+                        joinScreen.classList.remove(
+                            "hidden"
+                        );
+
+                        knockButton.disabled =
+                            false;
+
+                        knockButton.textContent =
+                            "🔔 Knock to Enter";
+
+                        showCustomAlert(
+                            "Your request to enter the conference audit was denied."
+                        );
+
+                        return;
+                    }
+
+
+                    if(
+                        record.status ===
+                            "removed" ||
+                        record.status ===
+                            "left"
+                    ){
+                        clearAuditorSession();
+
+                        await endAuditConference(
+                            record.status === "removed"
+                            ? "The conference administrator ended your audit access."
+                            : "You have left the conference."
+                        );
+                    }
+                }
+            )
+            .subscribe();
+}
+
+/* =========================================================
+   KNOCK
+========================================================= */
+
+knockButton.addEventListener(
+    "click",
+    async function(){
+
+        const name =
+            nameInput.value.trim();
+
+        if(!name){
+
+            showCustomAlert(
+                "Please enter your full name."
+            );
+
+            nameInput.focus();
+
+            return;
+        }
+
+        knockButton.disabled =
+            true;
+
+        knockButton.textContent =
+            "Knocking...";
+
+        await acquireLocalMedia();
+
+        const newCredential =
+            generateAuditorCredential();
+
+        /*
+         * INTENDED BACKEND CONTRACT.
+         *
+         * This RPC is NOT being deployed while live students are
+         * using production. The local migration remains unapplied.
+         *
+         * When deployed during a controlled maintenance window,
+         * the RPC itself must hard-code role='auditor' and
+         * status='waiting'. The browser never chooses its role.
+         */
+        const {
+            data,
+            error
+        } =
+        await supabaseClient.rpc(
+            "create_conference_auditor",
+            {
+                requested_room_id:
+                    ROOM_ID,
+
+                requested_participant_name:
+                    name,
+
+                requested_camera_on:
+                    true,
+
+                requested_mic_on:
+                    false,
+
+                supplied_credential:
+                    newCredential
+            }
+        );
+
+        if(error){
+
+            console.error(
+                "Auditor knock error:",
+                error
+            );
+
+            knockButton.disabled =
+                false;
+
+            knockButton.textContent =
+                "🔔 Knock to Enter";
+
+            showCustomAlert(
+                "The Auditor test backend is not active yet. No production Supabase change has been made."
+            );
+
+            return;
+        }
+
+        if(
+            !data?.id ||
+            data.role !== "auditor" ||
+            data.status !== "waiting"
+        ){
+
+            console.error(
+                "Auditor creation returned an unexpected record:",
+                data
+            );
+
+            knockButton.disabled =
+                false;
+
+            knockButton.textContent =
+                "🔔 Knock to Enter";
+
+            showCustomAlert(
+                "Auditor entry could not be established safely."
+            );
+
+            return;
+        }
+
+        auditorCredential =
+            newCredential;
+
+        auditorRecord =
+            data;
+
+        window.myParticipantId =
+            data.id;
+
+        waitingName.textContent =
+            name;
+
+        joinScreen.classList.add(
+            "hidden"
+        );
+
+        waitingScreen.classList.remove(
+            "hidden"
+        );
+
+        initializeWebRTCSignaling();
+
+        subscribeToAuditorStatus(
+            data.id
+        );
+    }
+);
+
+/* =========================================================
+   RESTORE APPROVED AUDITOR
+========================================================= */
+
+async function restoreAuditorSession(){
+
+    const stored =
+        loadAuditorSession();
+
+    if(!stored){
+        return false;
+    }
+
+    const {
+        data,
+        error
+    } =
+    await supabaseClient.rpc(
+        "restore_conference_participant_session",
+        {
+            requested_room_id:
+                ROOM_ID,
+
+            requested_participant_id:
+                stored.participantId,
+
+            supplied_credential:
+                stored.credential
+        }
+    );
+
+    /*
+     * Restore only an authoritative APPROVED AUDITOR.
+     * This is intentionally stricter than the generic participant
+     * restoration contract.
+     */
+    if(
+        error ||
+        !data?.id ||
+        data.room_id !== ROOM_ID ||
+        data.status !== "approved" ||
+        data.role !== "auditor"
+    ){
+        clearAuditorSession();
+
+        return false;
+    }
+
+    auditorCredential =
+        stored.credential;
+
+    auditorRecord =
+        data;
+
+    window.myParticipantId =
+        data.id;
+
+
+    /*
+     * Browser media acquisition establishes the physical tracks.
+     * The restored database record then establishes whether those
+     * tracks are actually permitted to be active.
+     *
+     * This prevents a browser refresh from accidentally overriding
+     * an existing Administrator camera/microphone state.
+     */
+
+    await acquireLocalMedia();
+
+    synchronizeAuditorMediaState(
+        auditorRecord
+    );
+
+
+    initializeWebRTCSignaling();
+
+    subscribeToAuditorStatus(
+        data.id
+    );
+
+    await enterAuditConference();
+
+    return true;
+}
+
+/* =========================================================
+   ENTER AUDIT CONFERENCE
+========================================================= */
+
+async function enterAuditConference(){
+
+    if(
+        !auditorRecord?.id ||
+        auditorRecord.role !==
+            "auditor" ||
+        auditorRecord.status !==
+            "approved"
+    ){
+        return;
+    }
+
+    /*
+     * The approved database record is authoritative.
+     *
+     * Apply its camera, microphone, and microphone-lock state
+     * before this Auditor enters the conference or advertises
+     * media to any authorized viewer.
+     *
+     * This covers both:
+     * - a newly approved Auditor, and
+     * - an approved Auditor restoring an existing session.
+     */
+
+    synchronizeAuditorMediaState(
+        auditorRecord
+    );
+
+    joinScreen.classList.add(
+        "hidden"
+    );
+
+    waitingScreen.classList.add(
+        "hidden"
+    );
+
+    endedScreen.classList.add(
+        "hidden"
+    );
+
+    conferenceScreen.style.display =
+        "flex";
+
+    connectionStatus.textContent =
+        "● Connecting...";
+
+    connectionStatus.style.color =
+        "#ffd400";
+
+    refreshLocalTile();
+
+    initializeWebRTCSignaling();
+
+    subscribeToConferenceRecords();
+
+    await ensureTurnCredentials();
+
+    while(!webRTCSignalingReady){
+
+        await new Promise(
+            resolve =>
+                setTimeout(
+                    resolve,
+                    50
+                )
+        );
+    }
+
+    await announceAuditorMediaReady();
+
+    await connectToExistingConferenceSources();
+}
+
+/* =========================================================
+   OWN MICROPHONE
+========================================================= */
+
+micButton.addEventListener(
+    "click",
+    async function(){
+
+        if(
+            !auditorRecord?.id ||
+            !auditorCredential ||
+            !localStream
+        ){
+            return;
+        }
+
+
+        /*
+         * The database record is authoritative.
+         *
+         * Do not infer the requested state from the local
+         * MediaStream because an Administrator may have
+         * changed microphone state independently.
+         */
+
+        const requestedMicOn =
+            !auditorRecord.mic_on;
+
+
+        /*
+         * A locked microphone may not be turned on by the
+         * Auditor.
+         *
+         * The backend remains the final authority, but this
+         * prevents sending a request that we already know
+         * cannot be honored.
+         */
+
+        if(
+            requestedMicOn &&
+            auditorRecord.mic_locked
+        ){
+
+            console.warn(
+                "Auditor microphone is locked by the conference administrator."
+            );
+
+            return;
+        }
+
+
+        const {
+            error
+        } =
+        await supabaseClient.rpc(
+            "set_conference_participant_microphone",
+            {
+                requested_participant_id:
+                    auditorRecord.id,
+
+                supplied_credential:
+                    auditorCredential,
+
+                requested_mic_on:
+                    requestedMicOn
+            }
+        );
+
+        if(error){
+
+            console.error(
+                "Auditor microphone change rejected:",
+                error
+            );
+
+            return;
+        }
+
+
+        /*
+         * Do not directly change the MediaStream here.
+         *
+         * The successful database update returns through
+         * the Auditor status subscription. That authoritative
+         * record is applied by synchronizeAuditorMediaState().
+         */
+
+        console.log(
+            "Auditor microphone change requested:",
+            requestedMicOn
+        );
+    }
+);
+
+/* =========================================================
+   OWN CAMERA
+========================================================= */
+
+cameraButton.addEventListener(
+    "click",
+    async function(){
+
+        if(
+            !auditorRecord?.id ||
+            !auditorCredential ||
+            !localStream
+        ){
+            return;
+        }
+
+
+        /*
+         * The database record is authoritative.
+         *
+         * The Auditor requests the opposite of the current
+         * authoritative camera state. Realtime then applies
+         * the accepted state to the local MediaStream.
+         */
+
+        const requestedCameraOn =
+            !auditorRecord.camera_on;
+
+
+        const {
+            error
+        } =
+        await supabaseClient.rpc(
+            "set_conference_participant_camera",
+            {
+                requested_participant_id:
+                    auditorRecord.id,
+
+                supplied_credential:
+                    auditorCredential,
+
+                requested_camera_on:
+                    requestedCameraOn
+            }
+        );
+
+        if(error){
+
+            console.error(
+                "Auditor camera change rejected:",
+                error
+            );
+
+            return;
+        }
+
+
+        /*
+         * Do not directly change the MediaStream here.
+         *
+         * synchronizeAuditorMediaState() applies the
+         * authoritative database result when Realtime
+         * delivers the updated participant record.
+         */
+
+        console.log(
+            "Auditor camera change requested:",
+            requestedCameraOn
+        );
+    }
+);
+
+/* =========================================================
+   EXIT
+========================================================= */
+
+exitButton.addEventListener(
+    "click",
+    async function(){
+
+        if(
+            auditorRecord?.id &&
+            auditorCredential
+        ){
+
+            const {
+                error
+            } =
+            await supabaseClient.rpc(
+                "leave_conference_participant",
+                {
+                    requested_participant_id:
+                        auditorRecord.id,
+
+                    supplied_credential:
+                        auditorCredential
+                }
+            );
+
+            if(error){
+
+                console.error(
+                    "Auditor leave error:",
+                    error
+                );
+
+                showCustomAlert(
+                    "Unable to leave the conference cleanly. Please try again."
+                );
+
+                return;
+            }
+        }
+
+        clearAuditorSession();
+
+        await endAuditConference(
+            "You have left the conference."
+        );
+    }
+);
+
+/* =========================================================
+   CLEANUP
+========================================================= */
+
+async function endAuditConference(
+    message
+){
+
+    /*
+     * Tear down every receive-only viewer connection.
+     *
+     * Use the shared release helper so tracks, ICE queues,
+     * streams, and video tiles are cleaned consistently.
+     */
+
+    Array.from(
+        viewerPeerConnections.keys()
+    ).forEach(
+        sourceId => {
+
+            releaseViewerPeerConnection(
+                sourceId,
+                true
+            );
+        }
+    );
+
+
+    /*
+     * Tear down every connection publishing this Auditor
+     * to an authorized viewer.
+     */
+
+    sourcePeerConnections.forEach(
+        peerConnection => {
+
+            peerConnection.onicecandidate =
+                null;
+
+            peerConnection.onconnectionstatechange =
+                null;
+
+            peerConnection.close();
+        }
+    );
+
+    sourcePeerConnections.clear();
+
+    pendingSourceIceCandidates.clear();
+
+    visibleConferenceRecords.clear();
+
+
+    /*
+     * Stop this device's camera and microphone.
+     */
+
+    if(localStream){
+
+        localStream
+            .getTracks()
+            .forEach(
+                track => {
+
+                    track.stop();
+                }
+            );
+    }
+
+    localStream =
+        null;
+
+
+    /*
+     * Audit authority has ended.
+     *
+     * Remove every Realtime subscription associated with
+     * this Auditor session. Merely hiding the interface is
+     * not sufficient cleanup.
+     */
+
+    if(statusChannel){
+
+        await supabaseClient.removeChannel(
+            statusChannel
+        );
+
+        statusChannel =
+            null;
+    }
+
+
+    if(conferenceChannel){
+
+        await supabaseClient.removeChannel(
+            conferenceChannel
+        );
+
+        conferenceChannel =
+            null;
+    }
+
+
+    if(webrtcSignalingChannel){
+
+        await supabaseClient.removeChannel(
+            webrtcSignalingChannel
+        );
+
+        webrtcSignalingChannel =
+            null;
+    }
+
+    webRTCSignalingReady =
+        false;
+
+
+    /*
+     * The ended page no longer retains an active Auditor
+     * identity or credential in runtime state.
+     *
+     * Persistent session storage has already been cleared
+     * by the Leave/Remove workflow before arriving here.
+     */
+
+    auditorCredential =
+        null;
+
+    auditorRecord =
+        null;
+
+    window.myParticipantId =
+        null;
+
+    turnCredentialsReady =
+        false;
+
+    turnCredentialsPromise =
+        null;
+
+
+    conferenceScreen.style.display =
+        "none";
+
+    waitingScreen.classList.add(
+        "hidden"
+    );
+
+    joinScreen.classList.add(
+        "hidden"
+    );
+
+    endedMessage.textContent =
+        message;
+
+    endedScreen.classList.remove(
+        "hidden"
+    );
+}
+
+/* =========================================================
+   STARTUP
+========================================================= */
+
+async function initializeAuditorPage(){
+
+    /*
+     * Signaling may be initialized immediately because merely
+     * subscribing to the room signaling channel grants no
+     * Auditor conference authority in this page.
+     *
+     * Media negotiation remains gated on authoritative
+     * role='auditor' + status='approved'.
+     */
+    initializeWebRTCSignaling();
+
+    const restored =
+        await restoreAuditorSession();
+
+    if(!restored){
+
+        joinScreen.classList.remove(
+            "hidden"
+        );
+
+        nameInput.focus();
+    }
+}
+
+initializeAuditorPage();
+
+</script>
+</body>
+</html>
