@@ -4210,6 +4210,140 @@ function subscribeToMyParticipant(participantId){
         participantId
     );
 
+
+    /*
+     * Process authoritative participant state from either:
+     *
+     *     1. a Realtime UPDATE, or
+     *     2. the reconciliation performed immediately after
+     *        the Realtime channel becomes SUBSCRIBED.
+     *
+     * Realtime tells us that something changed.
+     * The database establishes what is true.
+     */
+
+    function processParticipantStatus(
+        participant
+    ){
+
+        if(
+            !participant ||
+            participant.id !== participantId
+        ){
+
+            return;
+
+        }
+
+
+        if(
+            participant.status ===
+            "approved" &&
+            participantView.style.display !== "flex"
+        ){
+
+            console.log(
+                "ENTRY APPROVED"
+            );
+
+            enterConference(
+                participant
+            );
+
+
+            /*
+             * Administrator approval establishes
+             * permission.
+             *
+             * The participant now starts WebRTC
+             * and announces participant-ready only
+             * after signaling is ready.
+             */
+
+            startParticipantWebRTC(
+                participant
+            );
+
+        }
+
+
+        if(
+            participant.status ===
+            "denied"
+        ){
+
+            console.log(
+                "ENTRY DENIED"
+            );
+
+
+            /*
+             * Denial is terminal for this participant
+             * identity. Do not preserve it for refresh.
+             */
+
+            clearParticipantSession();
+
+            window.myParticipantId =
+                null;
+
+            participantCredential =
+                null;
+
+
+            showDeniedScreen();
+
+        }
+
+
+        if(
+            participant.status ===
+            "removed"
+        ){
+
+            console.log(
+                "REMOVED BY ADMINISTRATOR"
+            );
+
+
+            /*
+             * Removal is terminal for this participant
+             * identity. Do not preserve it for refresh.
+             */
+
+            clearParticipantSession();
+
+            window.myParticipantId =
+                null;
+
+            participantCredential =
+                null;
+
+
+            showRemovedScreen();
+
+        }
+
+
+        if(
+            participant.status ===
+            "left"
+        ){
+
+            /*
+             * LEFT is also terminal. This normally
+             * follows the explicit Leave workflow,
+             * but fail closed if it arrives through
+             * Realtime for any reason.
+             */
+
+            clearParticipantSession();
+
+        }
+
+    }
+
+
     const channel =
         supabaseClient
             .channel(
@@ -4248,124 +4382,92 @@ function subscribeToMyParticipant(participantId){
                         "================================"
                     );
 
-                    const participant =
-                        payload.new;
 
-
-                    if(
-                        participant.status ===
-                        "approved" &&
-                        participantView.style.display !== "flex"
-                    ){
-
-                        console.log(
-                            "ENTRY APPROVED"
-                        );
-
-                        enterConference(
-                            participant
-                        );
-
-
-                        /*
-                         * Administrator approval establishes
-                         * permission.
-                         *
-                         * The participant now starts WebRTC
-                         * and announces participant-ready only
-                         * after signaling is ready.
-                         */
-
-                        startParticipantWebRTC(
-                            participant
-                        );
-
-                    }
-
-
-                    if(
-                        participant.status ===
-                        "denied"
-                    ){
-
-                        console.log(
-                            "ENTRY DENIED"
-                        );
-
-
-                        /*
-                         * Denial is terminal for this participant
-                         * identity. Do not preserve it for refresh.
-                         */
-
-                        clearParticipantSession();
-
-                        window.myParticipantId =
-                            null;
-
-                        participantCredential =
-                            null;
-
-
-                        showDeniedScreen();
-
-                    }
-
-
-                    if(
-                        participant.status ===
-                        "removed"
-                    ){
-
-                        console.log(
-                            "REMOVED BY ADMINISTRATOR"
-                        );
-
-
-                        /*
-                         * Removal is terminal for this participant
-                         * identity. Do not preserve it for refresh.
-                         */
-
-                        clearParticipantSession();
-
-                        window.myParticipantId =
-                            null;
-
-                        participantCredential =
-                            null;
-
-
-                        showRemovedScreen();
-
-                    }
-
-
-                    if(
-                        participant.status ===
-                        "left"
-                    ){
-
-                        /*
-                         * LEFT is also terminal. This normally
-                         * follows the explicit Leave workflow,
-                         * but fail closed if it arrives through
-                         * Realtime for any reason.
-                         */
-
-                        clearParticipantSession();
-
-                    }
+                    processParticipantStatus(
+                        payload.new
+                    );
 
                 }
             )
             .subscribe(
-                function(status){
+                async function(status){
 
                     console.log(
                         "Participant subscription status:",
                         status
                     );
+
+
+                    /*
+                     * Close the admission race.
+                     *
+                     * An administrator may approve this participant
+                     * after the participant row is created but before
+                     * this Realtime subscription is fully active.
+                     *
+                     * Once SUBSCRIBED, independently read the
+                     * authoritative participant state. Therefore an
+                     * UPDATE missed during subscription startup cannot
+                     * leave the participant stranded on the waiting
+                     * screen.
+                     */
+
+                    if(
+                        status === "SUBSCRIBED" &&
+                        window.myParticipantId === participantId
+                    ){
+
+                        const {
+                            data,
+                            error
+                        } =
+                        await supabaseClient
+                            .from(
+                                "conference_participants"
+                            )
+                            .select(
+                                "*"
+                            )
+                            .eq(
+                                "id",
+                                participantId
+                            )
+                            .maybeSingle();
+
+
+                        if(error){
+
+                            console.error(
+                                "Participant status reconciliation error:",
+                                error
+                            );
+
+                            return;
+
+                        }
+
+
+                        if(
+                            !data ||
+                            window.myParticipantId !== participantId
+                        ){
+
+                            return;
+
+                        }
+
+
+                        console.log(
+                            "Participant status reconciled after subscription:",
+                            data.status
+                        );
+
+
+                        processParticipantStatus(
+                            data
+                        );
+
+                    }
 
                 }
             );
