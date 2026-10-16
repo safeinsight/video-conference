@@ -2685,10 +2685,7 @@ async function ensureTurnCredentials(){
                 };
 
 
-                const requestBody = {
-                    roomId:
-                        ROOM_ID
-                };
+                let requestBody;
 
 
                 /*
@@ -2729,6 +2726,15 @@ async function ensureTurnCredentials(){
                         "Bearer " +
                         session.access_token;
 
+
+                    requestBody = {
+                        room_id:
+                            ROOM_ID,
+
+                        access_type:
+                            "administrator"
+                    };
+
                 }else{
 
                     /*
@@ -2749,19 +2755,26 @@ async function ensureTurnCredentials(){
                     }
 
 
-                    requestBody.participantId =
-                        window.myParticipantId;
+                    requestBody = {
+                        room_id:
+                            ROOM_ID,
 
-                    requestBody.participantCredential =
-                        participantCredential;
+                        access_type:
+                            "participant",
+
+                        participant_id:
+                            window.myParticipantId,
+
+                        participant_credential:
+                            participantCredential
+                    };
 
                 }
 
 
                 const response =
                     await fetch(
-                        SUPABASE_URL +
-                        "/functions/v1/turn-credentials",
+                        `${SUPABASE_URL}/functions/v1/turn-credentials`,
                         {
                             method:
                                 "POST",
@@ -2779,14 +2792,13 @@ async function ensureTurnCredentials(){
 
                 if(!response.ok){
 
-                    const responseText =
-                        await response.text();
+                    console.error(
+                        "TURN credential request denied:",
+                        response.status
+                    );
 
                     throw new Error(
-                        "TURN credential request failed (" +
-                        response.status +
-                        "): " +
-                        responseText
+                        "TURN credential request failed."
                     );
 
                 }
