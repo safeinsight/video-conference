@@ -11,22 +11,44 @@
 
     <script>
         /*
-         * Legacy student conference entry point.
+         * Safe Insight conference legacy entry point.
          *
-         * Preserve the complete query string so existing links such as:
+         * Preserve the complete query string while routing the
+         * established Student and Administrator URLs to their
+         * dedicated conference pages.
+         *
+         * Student:
          *
          *     /video-conference/?room=LACCW
          *
-         * become:
+         * becomes:
          *
          *     /video-conference/student.html?room=LACCW
          *
+         * Administrator:
+         *
+         *     /video-conference/?admin=true&room=LACCW
+         *
+         * becomes:
+         *
+         *     /video-conference/admin.html?admin=true&room=LACCW
+         *
          * This file has no conference authority or application logic.
-         * Its only job is routing the legacy student URL.
+         * Its only job is routing the established legacy URLs.
          */
 
+        const conferenceParams =
+            new URLSearchParams(
+                window.location.search
+            );
+
+        const destination =
+            conferenceParams.get("admin") === "true"
+            ? "admin.html"
+            : "student.html";
+
         window.location.replace(
-            "student.html" + window.location.search
+            destination + window.location.search
         );
     </script>
 </head>
