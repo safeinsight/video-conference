@@ -3988,7 +3988,6 @@ knockButton.addEventListener(
             );
 
             nameInput.focus();
-
             return;
         }
 
@@ -4035,10 +4034,25 @@ knockButton.addEventListener(
 
         }catch(error){
 
-            console.log(
+            console.error(
                 "Camera/microphone permission:",
                 error
             );
+
+            localStream =
+                null;
+
+            knockButton.disabled =
+                false;
+
+            knockButton.textContent =
+                "🔔 Knock to Enter";
+
+            showCustomAlert(
+                "Unable to access your camera or microphone. Please check your browser permissions and try again."
+            );
+
+            return;
 
         }
 
