@@ -4048,8 +4048,52 @@ knockButton.addEventListener(
             knockButton.textContent =
                 "🔔 Knock to Enter";
 
+
+            /*
+               Convert the browser media exception into a short
+               diagnostic code that the participant can report
+               without opening browser developer tools.
+            */
+
+            let mediaDiagnosticCode =
+                "MEDIA-UNKNOWN";
+
+
+            if(error?.name === "NotAllowedError"){
+
+                mediaDiagnosticCode =
+                    "MEDIA-NOTALLOWED";
+
+            }else if(error?.name === "NotFoundError"){
+
+                mediaDiagnosticCode =
+                    "MEDIA-NOTFOUND";
+
+            }else if(error?.name === "NotReadableError"){
+
+                mediaDiagnosticCode =
+                    "MEDIA-NOTREADABLE";
+
+            }else if(error?.name === "OverconstrainedError"){
+
+                mediaDiagnosticCode =
+                    "MEDIA-OVERCONSTRAINED";
+
+            }else if(error?.name === "AbortError"){
+
+                mediaDiagnosticCode =
+                    "MEDIA-ABORTED";
+
+            }
+
+
             showCustomAlert(
-                "Unable to access your camera or microphone. Please check your browser permissions and try again."
+                "Unable to Start Camera / Microphone\n\n" +
+                "The conference could not access your camera or microphone.\n\n" +
+                "Diagnostic Code: " +
+                mediaDiagnosticCode +
+                "\n\n" +
+                "Please provide this code to Safe Insight."
             );
 
             return;
